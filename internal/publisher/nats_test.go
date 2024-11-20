@@ -3,6 +3,7 @@ package publisher
 import (
 	"testing"
 
+	"github.com/ihippik/wal-listener/v2/apis"
 	"github.com/ihippik/wal-listener/v2/internal/config"
 )
 
@@ -46,7 +47,7 @@ func TestEvent_GetSubjectName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := &Event{
+			e := &apis.Event{
 				Schema: tt.fields.Schema,
 				Table:  tt.fields.Table,
 				Action: tt.fields.Action,
