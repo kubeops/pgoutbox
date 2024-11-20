@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ihippik/wal-listener/v2/apis"
 	"github.com/ihippik/wal-listener/v2/internal/config"
 	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
-	"github.com/ihippik/wal-listener/v2/internal/publisher"
 
 	"github.com/jackc/pgx"
 	"golang.org/x/sync/errgroup"
@@ -25,7 +25,7 @@ import (
 const pgOutputPlugin = "pgoutput"
 
 type eventPublisher interface {
-	Publish(context.Context, string, *publisher.Event) error
+	Publish(context.Context, string, *apis.Event) error
 }
 
 type parser interface {
@@ -314,7 +314,7 @@ func (l *Listener) Stream(ctx context.Context) error {
 
 	pool := &sync.Pool{
 		New: func() any {
-			return &publisher.Event{}
+			return &apis.Event{}
 		},
 	}
 
