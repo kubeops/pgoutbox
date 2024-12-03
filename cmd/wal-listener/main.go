@@ -23,9 +23,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	scfg "github.com/ihippik/config"
-	"github.com/ihippik/wal-listener/v2/internal/config"
+	"github.com/ihippik/wal-listener/v2/apis"
 	"github.com/ihippik/wal-listener/v2/internal/listener"
 	"github.com/ihippik/wal-listener/v2/internal/listener/transaction"
 
@@ -57,7 +58,7 @@ func main() {
 			ctx, cancel := signal.NotifyContext(c.Context, syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
 
-			cfg, err := config.InitConfig(c.String("config"))
+			cfg, err := apis.InitConfig(c.String("config"))
 			if err != nil {
 				return fmt.Errorf("get config: %w", err)
 			}
@@ -74,7 +75,7 @@ func main() {
 
 			go scfg.InitMetrics(cfg.Monitoring.PromAddr, logger)
 
-			conn, rConn, err := initPgxConnections(cfg.Database, logger)
+			conn, rConn, err := initPgxConnections(cfg.Database, logger, time.Minute*30)
 			if err != nil {
 				return fmt.Errorf("pgx connection: %w", err)
 			}
@@ -97,7 +98,7 @@ func main() {
 				rConn,
 				pub,
 				transaction.NewBinaryParser(logger, binary.BigEndian),
-				config.NewMetrics(),
+				apis.NewMetrics(),
 			)
 
 			go svc.InitHandlers(ctx)

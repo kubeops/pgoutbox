@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/config"
 	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
 
 	"github.com/google/uuid"
@@ -98,7 +97,7 @@ func TestListener_slotIsExists(t *testing.T) {
 
 			w := &Listener{
 				log: logger,
-				cfg: &config.Config{Listener: &config.ListenerCfg{
+				cfg: &apis.Config{Listener: &apis.ListenerCfg{
 					SlotName: tt.fields.slotName,
 				}},
 				repository: repo,
@@ -455,7 +454,7 @@ func TestListener_Stream(t *testing.T) {
 	prs := new(parserMock)
 
 	type fields struct {
-		config     *config.Config
+		config     *apis.Config
 		slotName   string
 		restartLSN uint64
 	}
@@ -596,16 +595,16 @@ func TestListener_Stream(t *testing.T) {
 				)
 			},
 			fields: fields{
-				config: &config.Config{
-					Listener: &config.ListenerCfg{
+				config: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						SlotName:          "myslot",
 						AckTimeout:        0,
 						HeartbeatInterval: 5 * time.Millisecond,
-						Filter: config.FilterStruct{
+						Filter: apis.FilterStruct{
 							Tables: map[string][]string{"users": {"insert"}},
 						},
 					},
-					Publisher: &config.PublisherCfg{
+					Publisher: &apis.PublisherCfg{
 						Topic:       "STREAM",
 						TopicPrefix: "pre_",
 					},
@@ -630,15 +629,15 @@ func TestListener_Stream(t *testing.T) {
 				)
 			},
 			fields: fields{
-				config: &config.Config{
-					Listener: &config.ListenerCfg{
+				config: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						SlotName:          "myslot",
 						AckTimeout:        0,
-						HeartbeatInterval: 1, Filter: config.FilterStruct{
+						HeartbeatInterval: 1, Filter: apis.FilterStruct{
 							Tables: map[string][]string{"users": {"insert"}},
 						},
 					},
-					Publisher: &config.PublisherCfg{
+					Publisher: &apis.PublisherCfg{
 						Topic:       "stream",
 						TopicPrefix: "pre_",
 					},
@@ -700,15 +699,15 @@ func TestListener_Stream(t *testing.T) {
 				)
 			},
 			fields: fields{
-				config: &config.Config{
-					Listener: &config.ListenerCfg{
+				config: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						SlotName:          "myslot",
 						AckTimeout:        0,
-						HeartbeatInterval: 1, Filter: config.FilterStruct{
+						HeartbeatInterval: 1, Filter: apis.FilterStruct{
 							Tables: map[string][]string{"users": {"insert"}},
 						},
 					},
-					Publisher: &config.PublisherCfg{
+					Publisher: &apis.PublisherCfg{
 						Topic:       "stream",
 						TopicPrefix: "pre_",
 					},
@@ -817,19 +816,19 @@ func TestListener_Process(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		cfg     *config.Config
+		cfg     *apis.Config
 		setup   func()
 		wantErr error
 	}{
 		{
 			name: "success",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -869,13 +868,13 @@ func TestListener_Process(t *testing.T) {
 		},
 		{
 			name: "skip create publication",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -904,13 +903,13 @@ func TestListener_Process(t *testing.T) {
 		},
 		{
 			name: "get slot error",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -925,13 +924,13 @@ func TestListener_Process(t *testing.T) {
 		},
 		{
 			name: "slot does not exists",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,

@@ -20,17 +20,21 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/config"
 	"github.com/ihippik/wal-listener/v2/internal/publisher"
 
 	"github.com/jackc/pgx"
 	"github.com/nats-io/nats.go"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // initPgxConnections initialise db and replication connections.
-func initPgxConnections(cfg *config.DatabaseCfg, logger *slog.Logger) (*pgx.Conn, *pgx.ReplicationConn, error) {
+func initPgxConnections(cfg *apis.DatabaseCfg, logger *slog.Logger, timeout time.Duration) (*pgx.Conn, *pgx.ReplicationConn, error) {
+	var pgConn *pgx.Conn
+	var pgReplicationConn *pgx.ReplicationConn
+
 	pgxConf := pgx.ConnConfig{
 		LogLevel: pgx.LogLevelInfo,
 		Logger:   pgxLogger{logger},
@@ -41,17 +45,25 @@ func initPgxConnections(cfg *config.DatabaseCfg, logger *slog.Logger) (*pgx.Conn
 		Password: cfg.Password,
 	}
 
-	pgConn, err := pgx.Connect(pgxConf)
+	err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+		var err error
+		pgConn, err = pgx.Connect(pgxConf)
+		if err != nil {
+			return false, fmt.Errorf("db connection: %w", err)
+		}
+
+		pgReplicationConn, err = pgx.ReplicationConnect(pgxConf)
+		if err != nil {
+			return false, fmt.Errorf("replication connect: %w", err)
+		}
+
+		return true, nil
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("db connection: %w", err)
+		return nil, nil, fmt.Errorf("wait for db connection: %w", err)
 	}
 
-	rConnection, err := pgx.ReplicationConnect(pgxConf)
-	if err != nil {
-		return nil, nil, fmt.Errorf("replication connect: %w", err)
-	}
-
-	return pgConn, rConnection, nil
+	return pgConn, pgReplicationConn, nil
 }
 
 type pgxLogger struct {
@@ -69,18 +81,17 @@ type eventPublisher interface {
 }
 
 // factoryPublisher represents a factory function for creating a eventPublisher.
-func factoryPublisher(ctx context.Context, cfg *config.PublisherCfg, logger *slog.Logger) (eventPublisher, error) {
+func factoryPublisher(ctx context.Context, cfg *apis.PublisherCfg, logger *slog.Logger) (eventPublisher, error) {
 	switch cfg.Type {
-	case config.PublisherTypeKafka:
+	case apis.PublisherTypeKafka:
 		producer, err := publisher.NewProducer(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("kafka producer: %w", err)
 		}
 
 		return publisher.NewKafkaPublisher(producer), nil
-	case config.PublisherTypeNats:
-		// TODO: using direct credentials currently for testing purpose only
-		conn, err := nats.Connect(cfg.Address, nats.UserCredentials("/home/user/go/src/go.bytebuilders.dev/launchpad/2021/gitea_setup/nats/admin.creds"))
+	case apis.PublisherTypeNats:
+		conn, err := nats.Connect(cfg.Address, nats.UserCredentials(cfg.NatsAdminCredentialPath))
 		if err != nil {
 			return nil, fmt.Errorf("nats connection: %w", err)
 		}
@@ -95,7 +106,7 @@ func factoryPublisher(ctx context.Context, cfg *config.PublisherCfg, logger *slo
 		}
 
 		return pub, nil
-	case config.PublisherTypeRabbitMQ:
+	case apis.PublisherTypeRabbitMQ:
 		conn, err := publisher.NewConnection(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("new connection: %w", err)
@@ -112,7 +123,7 @@ func factoryPublisher(ctx context.Context, cfg *config.PublisherCfg, logger *slo
 		}
 
 		return pub, nil
-	case config.PublisherTypeGooglePubSub:
+	case apis.PublisherTypeGooglePubSub:
 		pubSubConn, err := publisher.NewPubSubConnection(ctx, logger, cfg.PubSubProjectID)
 		if err != nil {
 			return nil, fmt.Errorf("could not create pubsub connection: %w", err)

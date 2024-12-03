@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/config"
 
 	"github.com/IBM/sarama"
 	"github.com/goccy/go-json"
@@ -43,7 +42,7 @@ func (p *KafkaPublisher) Close() error {
 }
 
 // NewProducer return new Kafka producer instance.
-func NewProducer(pCfg *config.PublisherCfg) (sarama.SyncProducer, error) {
+func NewProducer(pCfg *apis.PublisherCfg) (sarama.SyncProducer, error) {
 	cfg := sarama.NewConfig()
 	cfg.Producer.Partitioner = sarama.NewRandomPartitioner
 	cfg.Producer.RequiredAcks = sarama.WaitForAll
