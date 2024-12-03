@@ -5,19 +5,17 @@ listener:
   heartbeatInterval: 10s
   filter:
     tables:
-      ac_user:
-        - insert
-        - update
-      ac_contract:
-        - insert
-        - update
+      ac_user: [insert, update, delete]
+      ac_team: [insert, update, delete]
+      ac_team_user: [insert, update, delete]
+      ac_contract: [insert, update, delete]
   topicsMap:
     schema_table_name: "notifier"
 logger:
   level: info
   fmt: json
 database:
-  host: localhost
+  host: 127.0.0.1:5432
   port: 5432
   name: bb
   user: postgres
@@ -26,11 +24,12 @@ database:
 publisher:
   type: nats
   address: localhost:30222
-  enable_tls: true # Kafka only
-  client_cert: "cert.pem" # Kafka only
-  client_key: "key.pub" # Kafka only
-  ca_cert: "ca.pem" # Kafka only
-  topic: "wal_listener"
+  natsAdminCredPath: /home/user/go/src/go.bytebuilders.dev/launchpad/2021/gitea_setup/nats/admin.creds # nats only
+  enableTLS: true # Kafka only
+  clientCert: "cert.pem" # Kafka only
+  clientKey: "key.pub" # Kafka only
+  caCert: "ca.pem" # Kafka only
+  topic: "outbox"
   topicPrefix: ""
 monitoring:
   sentryDSN: ""

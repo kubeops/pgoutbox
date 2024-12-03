@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/config"
 	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
 
 	"github.com/jackc/pgx"
@@ -59,7 +58,7 @@ type monitor interface {
 
 // Listener main service struct.
 type Listener struct {
-	cfg        *config.Config
+	cfg        *apis.Config
 	log        *slog.Logger
 	monitor    monitor
 	mu         sync.RWMutex
@@ -79,7 +78,7 @@ var (
 
 // NewWalListener create and initialize new service instance.
 func NewWalListener(
-	cfg *config.Config,
+	cfg *apis.Config,
 	log *slog.Logger,
 	repo repository,
 	repl replication,

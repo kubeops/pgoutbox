@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/config"
 
 	"github.com/goccy/go-json"
 	"github.com/wagslane/go-rabbitmq"
@@ -57,7 +56,7 @@ func (p *RabbitPublisher) Close() error {
 }
 
 // NewConnection creates a new RabbitMQ connection manager.
-func NewConnection(pCfg *config.PublisherCfg) (*rabbitmq.Conn, error) {
+func NewConnection(pCfg *apis.PublisherCfg) (*rabbitmq.Conn, error) {
 	conn, err := rabbitmq.NewConn(pCfg.Address)
 	if err != nil {
 		return nil, fmt.Errorf("new conn: %w", err)
