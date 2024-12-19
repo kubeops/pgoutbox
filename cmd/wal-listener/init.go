@@ -66,6 +66,17 @@ func initPgxConnections(cfg *apis.DatabaseCfg, logger *slog.Logger, timeout time
 	return pgConn, pgReplicationConn, nil
 }
 
+func configureReplicaIdentityToFull(pgConn *pgx.Conn, filterTables apis.FilterStruct) error {
+	for table := range filterTables.Tables {
+		_, err := pgConn.Exec(fmt.Sprintf("ALTER TABLE %s REPLICA IDENTITY FULL;", table))
+		if err != nil {
+			return fmt.Errorf("change replica identity to FULL for table %s: %w", table, err)
+		}
+	}
+
+	return nil
+}
+
 type pgxLogger struct {
 	logger *slog.Logger
 }

@@ -80,6 +80,9 @@ func main() {
 				return fmt.Errorf("pgx connection: %w", err)
 			}
 
+			if err = configureReplicaIdentityToFull(conn, cfg.Listener.Filter); err != nil {
+				return fmt.Errorf("configure replica identity: %w", err)
+			}
 			pub, err := factoryPublisher(ctx, cfg.Publisher, logger)
 			if err != nil {
 				return fmt.Errorf("factory publisher: %w", err)
