@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	scfg "github.com/ihippik/config"
+
 	"github.com/stretchr/testify/assert"
 )
 
