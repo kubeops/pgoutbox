@@ -3,6 +3,7 @@ package publisher
 import (
 	"context"
 	"fmt"
+
 	"github.com/ihippik/wal-listener/v2/internal/config"
 
 	"github.com/goccy/go-json"

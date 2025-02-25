@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
+	cfg "github.com/ihippik/config"
+
 	"github.com/asaskevich/govalidator"
 	"github.com/spf13/viper"
-
-	cfg "github.com/ihippik/config"
 )
 
 type PublisherType string
