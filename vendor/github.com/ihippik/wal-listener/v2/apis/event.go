@@ -3,8 +3,6 @@ package apis
 import (
 	"fmt"
 	"time"
-
-	"github.com/ihippik/wal-listener/v2/internal/config"
 	"github.com/google/uuid"
 )
 
