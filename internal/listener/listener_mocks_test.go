@@ -2,13 +2,13 @@ package listener
 
 import (
 	"context"
-	"github.com/jackc/pgx"
 	"time"
-
-	"github.com/stretchr/testify/mock"
 
 	trx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
 	"github.com/ihippik/wal-listener/v2/internal/publisher"
+
+	"github.com/jackc/pgx"
+	"github.com/stretchr/testify/mock"
 )
 
 type monitorMock struct{}

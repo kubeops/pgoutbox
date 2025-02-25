@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ihippik/wal-listener/v2/internal/config"
+	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
+	"github.com/ihippik/wal-listener/v2/internal/publisher"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-
-	"github.com/ihippik/wal-listener/v2/internal/config"
-	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
-	"github.com/ihippik/wal-listener/v2/internal/publisher"
 )
 
 var (
@@ -774,7 +774,8 @@ func TestListener_Process(t *testing.T) {
 		slotName string,
 		startLsn uint64,
 		timeline int64,
-		pluginArguments ...string) {
+		pluginArguments ...string,
+	) {
 		repl.On("StartReplication", slotName, startLsn, timeline, pluginArguments).Return(err).Once()
 	}
 
