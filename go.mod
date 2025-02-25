@@ -5,7 +5,6 @@ go 1.23.3
 require (
 	cloud.google.com/go/pubsub v1.43.0
 	github.com/IBM/sarama v1.43.3
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
 	github.com/ihippik/config v0.3.2
@@ -13,7 +12,6 @@ require (
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/magiconair/properties v1.8.7
 	github.com/nats-io/nats.go v1.37.0
-	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.4
 	github.com/wagslane/go-rabbitmq v0.14.2
@@ -28,6 +26,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
 	cloud.google.com/go/compute/metadata v0.5.1 // indirect
 	cloud.google.com/go/iam v1.2.1 // indirect
+	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
@@ -83,6 +82,7 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/viper v1.19.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
@@ -112,6 +112,6 @@ require (
 )
 
 replace (
-	github.com/ihippik/wal-listener/v2 => github.com/appscode-cloud/wal-listener/v2 v2.0.0-20241203101719-921cf3a52408
+	github.com/ihippik/wal-listener/v2 => ./..
 	github.com/ihippik/wal-listener/v2/apis => ./apis
 )
