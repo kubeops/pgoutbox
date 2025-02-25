@@ -24,7 +24,7 @@ import (
 	"github.com/ihippik/wal-listener/v2/internal/config"
 	"github.com/ihippik/wal-listener/v2/internal/publisher"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v5"
 	"github.com/nats-io/nats.go"
 )
 

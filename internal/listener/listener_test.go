@@ -15,7 +15,7 @@ import (
 	"github.com/ihippik/wal-listener/v2/internal/publisher"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
