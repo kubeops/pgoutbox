@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/apis"
-	trx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/apis"
+	trx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
 	"github.com/jackc/pgx"
 	"github.com/stretchr/testify/mock"

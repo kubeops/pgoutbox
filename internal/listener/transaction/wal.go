@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/apis"
+	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/google/uuid"
 )

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ihippik/wal-listener/v2/apis"
+	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/IBM/sarama"
 	"github.com/goccy/go-json"

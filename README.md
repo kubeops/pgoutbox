@@ -1,11 +1,6 @@
-# WAL-Listener
+# pgoutbox
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/ihippik/wal-listener)
-![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/ihippik/wal-listener)
-[![Publish Docker image](https://github.com/ihippik/wal-listener/actions/workflows/github-actions.yml/badge.svg)](https://github.com/ihippik/wal-listener/actions/workflows/github-actions.yml)
-
-![WAL-Listener](wal-listener.png)
+![PgOutbox](wal-listener.png)
 
 A service that helps implement the **Event-Driven architecture**.
 
@@ -77,7 +72,7 @@ You must make the following settings in the db configuration (postgresql.conf)
 * max_replication_slots >= 1
 
 The publication & slot created automatically when the service starts (for all tables and all actions).
-You can delete the default publication and create your own (name: _wal-listener_) with the necessary filtering conditions, and then the filtering will occur at the database level and not at the application level.
+You can delete the default publication and create your own (name: _pgoutbox_) with the necessary filtering conditions, and then the filtering will occur at the database level and not at the application level.
 
 https://www.postgresql.org/docs/current/sql-createpublication.html
 
@@ -150,7 +145,7 @@ for readiness `/ready`  and liveness `/healthz` probes.
 You can start the container from the project folder (configuration file is required).
 
 See `./config_example.yml` for an example configuration.
-Be sure to copy the file to the docker image in the `Dockerfile` prior to running [after the build setp](https://github.com/ihippik/wal-listener/blob/master/Dockerfile#L31)
+Be sure to copy the file to the docker image in the `Dockerfile` prior to running [after the build setp](https://kubeops.dev/pgoutbox/blob/master/Dockerfile#L31)
 ex:
 ```docker
 COPY /config.yml .
@@ -160,11 +155,4 @@ COPY /config.yml .
 Please don't forget to delete them:
 ```shell
 docker image prune --filter label=stage=builder
-```
-
-#### Docker Hub
-https://hub.docker.com/r/ihippik/wal-listener
-#### Example
-```shell
-docker run -v $(pwd)/config.yml:/app/config.yml ihippik/wal-listener:tag
 ```

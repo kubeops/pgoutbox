@@ -25,11 +25,11 @@ import (
 	"syscall"
 	"time"
 
-	scfg "github.com/ihippik/config"
-	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/listener"
-	"github.com/ihippik/wal-listener/v2/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/internal/listener"
+	"kubeops.dev/pgoutbox/internal/listener/transaction"
 
+	scfg "github.com/ihippik/config"
 	"github.com/urfave/cli/v2"
 )
 
@@ -43,7 +43,7 @@ func main() {
 	version := scfg.GetVersion()
 
 	app := &cli.App{
-		Name:    "WAL-Listener",
+		Name:    "PgOutbox",
 		Usage:   "listen PostgreSQL events",
 		Version: version,
 		Flags: []cli.Flag{

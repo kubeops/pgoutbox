@@ -41,7 +41,7 @@ func NewMetrics() *Metrics {
 	}
 }
 
-const appName = "wal-listener"
+const appName = "pgoutbox"
 
 // IncPublishedEvents increment published events counter.
 func (m Metrics) IncPublishedEvents(subject, table string) {

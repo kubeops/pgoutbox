@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/apis"
-	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/apis"
+	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx"
@@ -536,7 +536,7 @@ func TestListener_Stream(t *testing.T) {
 					uint64(0),
 					int64(-1),
 					protoVersion,
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 
 				setNewStandbyStatus([]uint64{10}, &pgx.StandbyStatus{
@@ -625,7 +625,7 @@ func TestListener_Stream(t *testing.T) {
 					uint64(0),
 					int64(-1),
 					protoVersion,
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 			},
 			fields: fields{
@@ -659,7 +659,7 @@ func TestListener_Stream(t *testing.T) {
 					uint64(0),
 					int64(-1),
 					protoVersion,
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 
 				setNewStandbyStatus([]uint64{0}, &pgx.StandbyStatus{
@@ -847,7 +847,7 @@ func TestListener_Process(t *testing.T) {
 					ReplyRequested:   0,
 				}, nil)
 
-				setCreatePublication("wal-listener", nil)
+				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
 					nil,
@@ -855,7 +855,7 @@ func TestListener_Process(t *testing.T) {
 					1099511628288,
 					-1,
 					"proto_version '1'",
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
@@ -882,7 +882,7 @@ func TestListener_Process(t *testing.T) {
 			},
 			setup: func() {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
-				setCreatePublication("wal-listener", errors.New("some err"))
+				setCreatePublication("pgoutbox", errors.New("some err"))
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
 					nil,
@@ -890,7 +890,7 @@ func TestListener_Process(t *testing.T) {
 					1099511628288,
 					-1,
 					"proto_version '1'",
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
@@ -917,7 +917,7 @@ func TestListener_Process(t *testing.T) {
 			},
 			setup: func() {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
-				setCreatePublication("wal-listener", nil)
+				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "100/200", errors.New("some err"))
 			},
 			wantErr: errors.New("slot is exists: get slot lsn: some err"),
@@ -938,7 +938,7 @@ func TestListener_Process(t *testing.T) {
 			},
 			setup: func() {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
-				setCreatePublication("wal-listener", nil)
+				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "", nil)
 				setCreateReplicationSlotEx(
 					"slot1",
@@ -953,7 +953,7 @@ func TestListener_Process(t *testing.T) {
 					1099511628288,
 					-1,
 					"proto_version '1'",
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)

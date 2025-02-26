@@ -1,4 +1,4 @@
-module github.com/ihippik/wal-listener/apis
+module kubeops.dev/pgoutbox/apis
 
 go 1.23.3
 
