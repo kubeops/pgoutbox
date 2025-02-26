@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/apis"
-	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/apis"
+	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
 	"github.com/jackc/pgx"
 	"golang.org/x/sync/errgroup"
@@ -287,7 +287,7 @@ func (l *Listener) slotIsExists(ctx context.Context) (bool, error) {
 
 const (
 	protoVersion    = "proto_version '1'"
-	publicationName = "wal-listener"
+	publicationName = "pgoutbox"
 )
 
 const (

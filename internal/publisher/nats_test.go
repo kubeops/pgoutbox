@@ -3,7 +3,7 @@ package publisher
 import (
 	"testing"
 
-	"github.com/ihippik/wal-listener/v2/apis"
+	"kubeops.dev/pgoutbox/apis"
 )
 
 func TestEvent_GetSubjectName(t *testing.T) {

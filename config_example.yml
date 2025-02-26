@@ -1,6 +1,6 @@
 listener:
   serverPort: 80 # k8s probes, optional
-  slotName: myslot_1
+  slotName: myslot_2
   refreshConnection: 30s
   heartbeatInterval: 10s
   filter:
@@ -9,6 +9,7 @@ listener:
       ac_team: [insert, update, delete]
       ac_team_user: [insert, update, delete]
       ac_contract: [insert, update, delete]
+      ac_cluster_info: [insert, update, delete]
   topicsMap:
     schema_table_name: "notifier"
 logger:
@@ -17,14 +18,14 @@ logger:
 database:
   host: 127.0.0.1:5432
   port: 5432
-  name: bb
+  name: outbox
   user: postgres
   password: postgres
   debug: false
 publisher:
   type: nats
   address: localhost:30222
-  natsAdminCredPath: /home/user/go/src/go.bytebuilders.dev/launchpad/2021/gitea_setup/nats/admin.creds # nats only
+  natsAdminCredPath: /home/imtiazcho/go/src/go.bytebuilders.dev/launchpad/2021/gitea_setup/nats/admin.creds # nats only
   enableTLS: true # Kafka only
   clientCert: "cert.pem" # Kafka only
   clientKey: "key.pub" # Kafka only

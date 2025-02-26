@@ -1,6 +1,8 @@
-module github.com/ihippik/wal-listener/v2
+module kubeops.dev/pgoutbox
 
 go 1.23.3
+
+toolchain go1.24.0
 
 require (
 	cloud.google.com/go/pubsub v1.43.0
@@ -8,16 +10,16 @@ require (
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
 	github.com/ihippik/config v0.3.2
-	github.com/ihippik/wal-listener/v2/apis v0.0.0
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/magiconair/properties v1.8.7
-	github.com/nats-io/nats.go v1.37.0
+	github.com/nats-io/nats.go v1.39.1
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.4
 	github.com/wagslane/go-rabbitmq v0.14.2
 	golang.org/x/sync v0.10.0
 	google.golang.org/grpc v1.66.2
 	k8s.io/apimachinery v0.32.0
+	kubeops.dev/pgoutbox/apis v0.0.0
 )
 
 require (
@@ -62,7 +64,7 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/nats-io/nkeys v0.4.7 // indirect
+	github.com/nats-io/nkeys v0.4.9 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
@@ -112,6 +114,6 @@ require (
 )
 
 replace (
-	github.com/ihippik/wal-listener/v2 => ./..
-	github.com/ihippik/wal-listener/v2/apis => ./apis
+	kubeops.dev/pgoutbox => ./..
+	kubeops.dev/pgoutbox/apis => ./apis
 )

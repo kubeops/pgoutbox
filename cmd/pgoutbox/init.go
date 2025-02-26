@@ -22,8 +22,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/apis"
-	"github.com/ihippik/wal-listener/v2/internal/publisher"
+	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/internal/publisher"
 
 	"github.com/jackc/pgx"
 	"github.com/nats-io/nats.go"

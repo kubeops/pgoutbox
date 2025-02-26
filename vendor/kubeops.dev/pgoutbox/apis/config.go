@@ -20,7 +20,7 @@ const (
 	PublisherTypeGooglePubSub PublisherType = "google_pubsub"
 )
 
-// Config for wal-listener.
+// Config for pgoutbox.
 type Config struct {
 	Listener   *ListenerCfg   `valid:"required" mapstructure:"listener"`
 	Database   *DatabaseCfg   `valid:"required" mapstructure:"database"`

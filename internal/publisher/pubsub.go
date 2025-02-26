@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ihippik/wal-listener/v2/apis"
+	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/goccy/go-json"
 )

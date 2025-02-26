@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/ihippik/wal-listener/v2/apis"
+	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/goccy/go-json"
 	"github.com/nats-io/nats.go"
