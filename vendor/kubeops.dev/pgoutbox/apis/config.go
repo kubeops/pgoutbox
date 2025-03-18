@@ -7,8 +7,6 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/spf13/viper"
-
-	cfg "github.com/ihippik/config"
 )
 
 type PublisherType string
@@ -22,11 +20,10 @@ const (
 
 // Config for pgoutbox.
 type Config struct {
-	Listener   *ListenerCfg   `valid:"required" mapstructure:"listener"`
-	Database   *DatabaseCfg   `valid:"required" mapstructure:"database"`
-	Publisher  *PublisherCfg  `valid:"required" mapstructure:"publisher"`
-	Logger     *cfg.Logger    `valid:"required" mapstructure:"logger"`
-	Monitoring cfg.Monitoring `valid:"required" mapstructure:"monitoring"`
+	Listener  *ListenerCfg  `valid:"required" mapstructure:"listener"`
+	Database  *DatabaseCfg  `valid:"required" mapstructure:"database"`
+	Publisher *PublisherCfg `valid:"required" mapstructure:"publisher"`
+	Logger    *Logger       `valid:"required" mapstructure:"logger"`
 }
 
 // ListenerCfg path of the listener config.

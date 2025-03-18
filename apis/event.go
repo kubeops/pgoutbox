@@ -2,8 +2,8 @@ package apis
 
 import (
 	"fmt"
-	"time"
 	"github.com/google/uuid"
+	"time"
 )
 
 // Event structure for publishing to the NATS server.
