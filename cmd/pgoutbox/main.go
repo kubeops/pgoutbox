@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -29,9 +30,24 @@ import (
 	"kubeops.dev/pgoutbox/internal/listener"
 	"kubeops.dev/pgoutbox/internal/listener/transaction"
 
-	scfg "github.com/ihippik/config"
 	"github.com/urfave/cli/v2"
 )
+
+// GetVersion returns latest git hash of commit.
+func GetVersion() string {
+	var version = "unknown"
+
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		for _, item := range info.Settings {
+			if item.Key == "vcs.revision" && len(item.Value) > 4 {
+				version = item.Value[:4]
+			}
+		}
+	}
+
+	return version
+}
 
 func main() {
 	cli.VersionFlag = &cli.BoolFlag{
@@ -40,7 +56,7 @@ func main() {
 		Usage:   "print only the version",
 	}
 
-	version := scfg.GetVersion()
+	version := GetVersion()
 
 	app := &cli.App{
 		Name:    "PgOutbox",
@@ -49,7 +65,7 @@ func main() {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
-				Value:   "config_example.yml",
+				Value:   "config.yml",
 				Aliases: []string{"c"},
 				Usage:   "path to config file",
 			},
@@ -67,13 +83,7 @@ func main() {
 				return fmt.Errorf("validate config: %w", err)
 			}
 
-			if err = scfg.InitSentry(cfg.Monitoring.SentryDSN, version); err != nil {
-				return fmt.Errorf("init sentry: %w", err)
-			}
-
-			logger := scfg.InitSlog(cfg.Logger, version, cfg.Monitoring.SentryDSN != "")
-
-			go scfg.InitMetrics(cfg.Monitoring.PromAddr, logger)
+			logger := apis.InitSlog(cfg.Logger, version, false)
 
 			conn, rConn, err := initPgxConnections(cfg.Database, logger, time.Minute*30)
 			if err != nil {

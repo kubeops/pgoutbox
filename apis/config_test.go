@@ -4,14 +4,12 @@ import (
 	"errors"
 	"testing"
 
-	scfg "github.com/ihippik/config"
-
 	"github.com/stretchr/testify/assert"
 )
 
 func TestConfig_Validate(t *testing.T) {
 	type fields struct {
-		Logger    *scfg.Logger
+		Logger    *Logger
 		Listener  *ListenerCfg
 		Database  *DatabaseCfg
 		Publisher *PublisherCfg
@@ -24,7 +22,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "success",
 			fields: fields{
-				Logger: &scfg.Logger{
+				Logger: &Logger{
 					Level: "info",
 				},
 				Listener: &ListenerCfg{
@@ -52,7 +50,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "bad listener cfg",
 			fields: fields{
-				Logger: &scfg.Logger{
+				Logger: &Logger{
 					Level: "info",
 				},
 				Listener: &ListenerCfg{
@@ -78,7 +76,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "bad db cfg",
 			fields: fields{
-				Logger: &scfg.Logger{
+				Logger: &Logger{
 					Level: "info",
 				},
 				Listener: &ListenerCfg{
@@ -104,7 +102,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty publisher kind",
 			fields: fields{
-				Logger: &scfg.Logger{
+				Logger: &Logger{
 					Level: "info",
 				},
 				Listener: &ListenerCfg{

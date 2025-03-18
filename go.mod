@@ -9,7 +9,6 @@ require (
 	github.com/IBM/sarama v1.43.3
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
-	github.com/ihippik/config v0.3.2
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/magiconair/properties v1.8.7
 	github.com/nats-io/nats.go v1.39.1
@@ -18,8 +17,7 @@ require (
 	github.com/wagslane/go-rabbitmq v0.14.2
 	golang.org/x/sync v0.10.0
 	google.golang.org/grpc v1.66.2
-	k8s.io/apimachinery v0.32.0
-	kubeops.dev/pgoutbox/apis v0.0.0
+	k8s.io/apimachinery v0.30.3
 )
 
 require (
@@ -39,7 +37,6 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/getsentry/sentry-go v0.29.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
@@ -52,14 +49,12 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
-	github.com/ihippik/slog-sentry v1.0.0 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
-	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -111,9 +106,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
-)
-
-replace (
-	kubeops.dev/pgoutbox => ./..
-	kubeops.dev/pgoutbox/apis => ./apis
 )

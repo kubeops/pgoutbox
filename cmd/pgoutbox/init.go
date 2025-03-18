@@ -102,7 +102,7 @@ func factoryPublisher(ctx context.Context, cfg *apis.PublisherCfg, logger *slog.
 
 		return publisher.NewKafkaPublisher(producer), nil
 	case apis.PublisherTypeNats:
-		conn, err := nats.Connect(cfg.Address, nats.UserCredentials(cfg.NatsAdminCredentialPath))
+		conn, err := nats.Connect(cfg.Address, nats.UserCredentials(cfg.NatsCredPath))
 		if err != nil {
 			return nil, fmt.Errorf("nats connection: %w", err)
 		}
@@ -112,8 +112,8 @@ func factoryPublisher(ctx context.Context, cfg *apis.PublisherCfg, logger *slog.
 			return nil, fmt.Errorf("new nats publisher: %w", err)
 		}
 
-		if err := pub.CreateStream(cfg.Topic); err != nil {
-			return nil, fmt.Errorf("create stream: %w", err)
+		if err = pub.WaitForStreamToBeCreated(context.TODO(), cfg.Topic); err != nil {
+			return nil, fmt.Errorf("wait for stream to be created: %w", err)
 		}
 
 		return pub, nil

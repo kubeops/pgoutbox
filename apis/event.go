@@ -2,8 +2,8 @@ package apis
 
 import (
 	"fmt"
-	"time"
 	"github.com/google/uuid"
+	"time"
 )
 
 // Event structure for publishing to the NATS server.
@@ -19,7 +19,7 @@ type Event struct {
 
 // SubjectName creates subject name from the prefix, schema and table name. Also using topic map from cfg.
 func (e *Event) SubjectName(cfg *Config) string {
-	topic := fmt.Sprintf("%s_%s", e.Schema, e.Table)
+	topic := fmt.Sprintf("schemas.%s.tables.%s", e.Schema, e.Table)
 
 	if cfg.Listener.TopicsMap != nil {
 		if t, ok := cfg.Listener.TopicsMap[topic]; ok {

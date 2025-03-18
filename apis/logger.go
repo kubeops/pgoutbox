@@ -1,10 +1,8 @@
-package config
+package apis
 
 import (
 	"log/slog"
 	"os"
-
-	"github.com/ihippik/slog-sentry"
 )
 
 // LoggerLevel log levels.
@@ -19,8 +17,8 @@ const (
 
 // Logger represent configuration for any logger.
 type Logger struct {
-	Level LoggerLevel `yaml:"level" env:"LEVEL,required" valid:"required"`
-	Fmt   string      `yaml:"fmt" env:"FMT,default=json"`
+	Level LoggerLevel `json:"level" yaml:"level" env:"LEVEL,required" valid:"required"`
+	Fmt   string      `json:"fmt" yaml:"fmt" env:"FMT,default=json"`
 }
 
 // InitSlog init slog logger instance with version field and hook for Sentry.
@@ -49,7 +47,7 @@ func InitSlog(cfg *Logger, version string, hook bool) *slog.Logger {
 	}
 
 	if hook {
-		handler = slogsentry.NewSentryHandler(handler, []slog.Level{slog.LevelWarn, slog.LevelError})
+		// TODO: add OTEL hook
 	}
 
 	logger := slog.New(handler).With("version", version)
