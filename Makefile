@@ -17,12 +17,12 @@
 SHELL=/bin/bash -o pipefail
 
 PRODUCT_OWNER_NAME := appscode
-PRODUCT_NAME       := wal-listener
+PRODUCT_NAME       := pgoutbox
 ENFORCE_LICENSE    ?=
 
-GO_PKG   := github.com/ihippik
+GO_PKG   := kubeops.dev
 REPO     := $(notdir $(shell pwd))
-BIN      := wal-listener
+BIN      := pgoutbox
 COMPRESS ?= no
 
 # Where to push the docker image.
@@ -313,7 +313,7 @@ install:
 	@cd ../installer; \
 	kubectl create ns $(KUBE_NAMESPACE) || true; \
 	kubectl label ns $(KUBE_NAMESPACE) pod-security.kubernetes.io/enforce=restricted; \
-	helm upgrade -i cluster-importer charts/cluster-importer --wait \
+	helm upgrade -i pgoutbox charts/pgoutbox --wait \
 		--namespace=$(KUBE_NAMESPACE) --create-namespace \
 		--set image.tag=$(TAG_PROD) \
 		--set imagePullPolicy=$(IMAGE_PULL_POLICY) \
@@ -322,7 +322,7 @@ install:
 .PHONY: uninstall
 uninstall:
 	@cd ../installer; \
-	helm uninstall cluster-importer --namespace=$(KUBE_NAMESPACE) || true
+	helm uninstall pgoutbox --namespace=$(KUBE_NAMESPACE) || true
 
 .PHONY: purge
 purge: uninstall

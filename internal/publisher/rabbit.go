@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ihippik/wal-listener/v2/internal/config"
+	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/goccy/go-json"
 	"github.com/wagslane/go-rabbitmq"
@@ -27,7 +27,7 @@ func NewRabbitPublisher(pubTopic string, conn *rabbitmq.Conn, publisher *rabbitm
 }
 
 // Publish send events, implements eventPublisher.
-func (p *RabbitPublisher) Publish(ctx context.Context, topic string, event *Event) error {
+func (p *RabbitPublisher) Publish(ctx context.Context, topic string, event *apis.Event) error {
 	const contentTypeJSON = "application/json"
 
 	body, err := json.Marshal(event)
@@ -56,7 +56,7 @@ func (p *RabbitPublisher) Close() error {
 }
 
 // NewConnection creates a new RabbitMQ connection manager.
-func NewConnection(pCfg *config.PublisherCfg) (*rabbitmq.Conn, error) {
+func NewConnection(pCfg *apis.PublisherCfg) (*rabbitmq.Conn, error) {
 	conn, err := rabbitmq.NewConn(pCfg.Address)
 	if err != nil {
 		return nil, fmt.Errorf("new conn: %w", err)

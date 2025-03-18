@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"kubeops.dev/pgoutbox/apis"
+
 	"github.com/goccy/go-json"
 	"github.com/nats-io/nats.go"
 )
@@ -33,7 +35,7 @@ func (n NatsPublisher) Close() error {
 }
 
 // Publish serializes the event and publishes it on the bus.
-func (n NatsPublisher) Publish(_ context.Context, subject string, event *Event) error {
+func (n NatsPublisher) Publish(_ context.Context, subject string, event *apis.Event) error {
 	msg, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal err: %w", err)

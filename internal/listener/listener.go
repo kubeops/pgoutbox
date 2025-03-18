@@ -13,9 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/internal/config"
-	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
-	"github.com/ihippik/wal-listener/v2/internal/publisher"
+	"kubeops.dev/pgoutbox/apis"
+	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
 	"github.com/jackc/pgx"
 	"golang.org/x/sync/errgroup"
@@ -25,7 +24,7 @@ import (
 const pgOutputPlugin = "pgoutput"
 
 type eventPublisher interface {
-	Publish(context.Context, string, *publisher.Event) error
+	Publish(context.Context, string, *apis.Event) error
 }
 
 type parser interface {
@@ -59,7 +58,7 @@ type monitor interface {
 
 // Listener main service struct.
 type Listener struct {
-	cfg        *config.Config
+	cfg        *apis.Config
 	log        *slog.Logger
 	monitor    monitor
 	mu         sync.RWMutex
@@ -79,7 +78,7 @@ var (
 
 // NewWalListener create and initialize new service instance.
 func NewWalListener(
-	cfg *config.Config,
+	cfg *apis.Config,
 	log *slog.Logger,
 	repo repository,
 	repl replication,
@@ -288,7 +287,7 @@ func (l *Listener) slotIsExists(ctx context.Context) (bool, error) {
 
 const (
 	protoVersion    = "proto_version '1'"
-	publicationName = "wal-listener"
+	publicationName = "pgoutbox"
 )
 
 const (
@@ -314,7 +313,7 @@ func (l *Listener) Stream(ctx context.Context) error {
 
 	pool := &sync.Pool{
 		New: func() any {
-			return &publisher.Event{}
+			return &apis.Event{}
 		},
 	}
 
