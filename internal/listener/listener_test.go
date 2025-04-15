@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ihippik/wal-listener/v2/internal/config"
-	tx "github.com/ihippik/wal-listener/v2/internal/listener/transaction"
-	"github.com/ihippik/wal-listener/v2/internal/publisher"
+	"kubeops.dev/pgoutbox/apis"
+	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx"
@@ -98,7 +97,7 @@ func TestListener_slotIsExists(t *testing.T) {
 
 			w := &Listener{
 				log: logger,
-				cfg: &config.Config{Listener: &config.ListenerCfg{
+				cfg: &apis.Config{Listener: &apis.ListenerCfg{
 					SlotName: tt.fields.slotName,
 				}},
 				repository: repo,
@@ -455,7 +454,7 @@ func TestListener_Stream(t *testing.T) {
 	prs := new(parserMock)
 
 	type fields struct {
-		config     *config.Config
+		config     *apis.Config
 		slotName   string
 		restartLSN uint64
 	}
@@ -501,8 +500,8 @@ func TestListener_Stream(t *testing.T) {
 		).Return(err).After(10 * time.Millisecond)
 	}
 
-	setPublish := func(subject string, want publisher.Event, err error) {
-		publ.On("Publish", mock.Anything, subject, mock.MatchedBy(func(got publisher.Event) bool {
+	setPublish := func(subject string, want apis.Event, err error) {
+		publ.On("Publish", mock.Anything, subject, mock.MatchedBy(func(got apis.Event) bool {
 			ok := want.Action == got.Action &&
 				reflect.DeepEqual(want.Data, got.Data) &&
 				want.ID == got.ID &&
@@ -537,7 +536,7 @@ func TestListener_Stream(t *testing.T) {
 					uint64(0),
 					int64(-1),
 					protoVersion,
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 
 				setNewStandbyStatus([]uint64{10}, &pgx.StandbyStatus{
@@ -567,7 +566,7 @@ func TestListener_Stream(t *testing.T) {
 
 				setPublish(
 					"STREAM.pre_public_users",
-					publisher.Event{
+					apis.Event{
 						ID:        uuid.MustParse("00000000-0000-4000-8000-000000000000"),
 						Schema:    "public",
 						Table:     "users",
@@ -596,16 +595,16 @@ func TestListener_Stream(t *testing.T) {
 				)
 			},
 			fields: fields{
-				config: &config.Config{
-					Listener: &config.ListenerCfg{
+				config: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						SlotName:          "myslot",
 						AckTimeout:        0,
 						HeartbeatInterval: 5 * time.Millisecond,
-						Filter: config.FilterStruct{
+						Filter: apis.FilterStruct{
 							Tables: map[string][]string{"users": {"insert"}},
 						},
 					},
-					Publisher: &config.PublisherCfg{
+					Publisher: &apis.PublisherCfg{
 						Topic:       "STREAM",
 						TopicPrefix: "pre_",
 					},
@@ -626,19 +625,19 @@ func TestListener_Stream(t *testing.T) {
 					uint64(0),
 					int64(-1),
 					protoVersion,
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 			},
 			fields: fields{
-				config: &config.Config{
-					Listener: &config.ListenerCfg{
+				config: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						SlotName:          "myslot",
 						AckTimeout:        0,
-						HeartbeatInterval: 1, Filter: config.FilterStruct{
+						HeartbeatInterval: 1, Filter: apis.FilterStruct{
 							Tables: map[string][]string{"users": {"insert"}},
 						},
 					},
-					Publisher: &config.PublisherCfg{
+					Publisher: &apis.PublisherCfg{
 						Topic:       "stream",
 						TopicPrefix: "pre_",
 					},
@@ -660,7 +659,7 @@ func TestListener_Stream(t *testing.T) {
 					uint64(0),
 					int64(-1),
 					protoVersion,
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 
 				setNewStandbyStatus([]uint64{0}, &pgx.StandbyStatus{
@@ -700,15 +699,15 @@ func TestListener_Stream(t *testing.T) {
 				)
 			},
 			fields: fields{
-				config: &config.Config{
-					Listener: &config.ListenerCfg{
+				config: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						SlotName:          "myslot",
 						AckTimeout:        0,
-						HeartbeatInterval: 1, Filter: config.FilterStruct{
+						HeartbeatInterval: 1, Filter: apis.FilterStruct{
 							Tables: map[string][]string{"users": {"insert"}},
 						},
 					},
-					Publisher: &config.PublisherCfg{
+					Publisher: &apis.PublisherCfg{
 						Topic:       "stream",
 						TopicPrefix: "pre_",
 					},
@@ -817,19 +816,19 @@ func TestListener_Process(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		cfg     *config.Config
+		cfg     *apis.Config
 		setup   func()
 		wantErr error
 	}{
 		{
 			name: "success",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -848,7 +847,7 @@ func TestListener_Process(t *testing.T) {
 					ReplyRequested:   0,
 				}, nil)
 
-				setCreatePublication("wal-listener", nil)
+				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
 					nil,
@@ -856,7 +855,7 @@ func TestListener_Process(t *testing.T) {
 					1099511628288,
 					-1,
 					"proto_version '1'",
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
@@ -869,13 +868,13 @@ func TestListener_Process(t *testing.T) {
 		},
 		{
 			name: "skip create publication",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -883,7 +882,7 @@ func TestListener_Process(t *testing.T) {
 			},
 			setup: func() {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
-				setCreatePublication("wal-listener", errors.New("some err"))
+				setCreatePublication("pgoutbox", errors.New("some err"))
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
 					nil,
@@ -891,7 +890,7 @@ func TestListener_Process(t *testing.T) {
 					1099511628288,
 					-1,
 					"proto_version '1'",
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
@@ -904,13 +903,13 @@ func TestListener_Process(t *testing.T) {
 		},
 		{
 			name: "get slot error",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -918,20 +917,20 @@ func TestListener_Process(t *testing.T) {
 			},
 			setup: func() {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
-				setCreatePublication("wal-listener", nil)
+				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "100/200", errors.New("some err"))
 			},
 			wantErr: errors.New("slot is exists: get slot lsn: some err"),
 		},
 		{
 			name: "slot does not exists",
-			cfg: &config.Config{
-				Listener: &config.ListenerCfg{
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
 					AckTimeout:        0,
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
-					Filter: config.FilterStruct{
+					Filter: apis.FilterStruct{
 						Tables: nil,
 					},
 					TopicsMap: nil,
@@ -939,7 +938,7 @@ func TestListener_Process(t *testing.T) {
 			},
 			setup: func() {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
-				setCreatePublication("wal-listener", nil)
+				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "", nil)
 				setCreateReplicationSlotEx(
 					"slot1",
@@ -954,7 +953,7 @@ func TestListener_Process(t *testing.T) {
 					1099511628288,
 					-1,
 					"proto_version '1'",
-					"publication_names 'wal-listener'",
+					"publication_names 'pgoutbox'",
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
