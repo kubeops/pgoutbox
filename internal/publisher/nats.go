@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
+
+	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/goccy/go-json"
 	"github.com/nats-io/nats.go"
@@ -33,7 +36,7 @@ func (n NatsPublisher) Close() error {
 }
 
 // Publish serializes the event and publishes it on the bus.
-func (n NatsPublisher) Publish(_ context.Context, subject string, event *Event) error {
+func (n NatsPublisher) Publish(_ context.Context, subject string, event *apis.Event) error {
 	msg, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal err: %w", err)
@@ -46,25 +49,28 @@ func (n NatsPublisher) Publish(_ context.Context, subject string, event *Event) 
 	return nil
 }
 
-// CreateStream creates a stream by using JetStreamContext. We can do it manually.
-func (n NatsPublisher) CreateStream(streamName string) error {
-	stream, err := n.js.StreamInfo(streamName)
-	if err != nil {
-		n.logger.Warn("failed to get stream info", "err", err)
-	}
+// WaitForStreamToBeCreated polls every 2 seconds until the stream with the given name is found.
+// It returns an error if the context is canceled or times out.
+func (n NatsPublisher) WaitForStreamToBeCreated(ctx context.Context, streamName string) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 
-	if stream == nil {
-		streamSubjects := streamName + ".*"
-
-		if _, err = n.js.AddStream(&nats.StreamConfig{
-			Name:     streamName,
-			Subjects: []string{streamSubjects},
-		}); err != nil {
-			return fmt.Errorf("add stream: %w", err)
+	for {
+		select {
+		case <-ctx.Done():
+			n.logger.Error("context canceled while waiting for stream to be created", "stream", streamName)
+			return ctx.Err()
+		case <-ticker.C:
+			stream, err := n.js.StreamInfo(streamName)
+			if err != nil {
+				n.logger.Warn("failed to get stream info", "stream", streamName, "error", err)
+				continue
+			}
+			if stream != nil {
+				n.logger.Info("stream exists", "stream", streamName)
+				return nil
+			}
+			n.logger.Info("waiting for stream to be created", "stream", streamName)
 		}
-
-		n.logger.Info("stream not exists, created", slog.String("subjects", streamSubjects))
 	}
-
-	return nil
 }

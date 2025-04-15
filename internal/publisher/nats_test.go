@@ -3,7 +3,7 @@ package publisher
 import (
 	"testing"
 
-	"github.com/ihippik/wal-listener/v2/internal/config"
+	"kubeops.dev/pgoutbox/apis"
 )
 
 func TestEvent_GetSubjectName(t *testing.T) {
@@ -15,7 +15,7 @@ func TestEvent_GetSubjectName(t *testing.T) {
 	}
 
 	type args struct {
-		cfg *config.Config
+		cfg *apis.Config
 	}
 
 	tests := []struct {
@@ -33,11 +33,11 @@ func TestEvent_GetSubjectName(t *testing.T) {
 				Data:   nil,
 			},
 			args: args{
-				cfg: &config.Config{
-					Listener: &config.ListenerCfg{
+				cfg: &apis.Config{
+					Listener: &apis.ListenerCfg{
 						TopicsMap: nil,
 					},
-					Publisher: &config.PublisherCfg{TopicPrefix: "prefix_", Topic: "STREAM"},
+					Publisher: &apis.PublisherCfg{TopicPrefix: "prefix_", Topic: "STREAM"},
 				},
 			},
 			want: "STREAM.prefix_public_users",
@@ -46,7 +46,7 @@ func TestEvent_GetSubjectName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := &Event{
+			e := &apis.Event{
 				Schema: tt.fields.Schema,
 				Table:  tt.fields.Table,
 				Action: tt.fields.Action,
