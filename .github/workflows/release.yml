@@ -64,8 +64,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            bin/wal-listener-linux-amd64.tar.gz
-            bin/wal-listener-linux-arm64.tar.gz
-            bin/wal-listener-checksums.txt
+            bin/pgoutbox-linux-amd64.tar.gz
+            bin/pgoutbox-linux-arm64.tar.gz
+            bin/pgoutbox-checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
