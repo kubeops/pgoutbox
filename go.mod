@@ -7,15 +7,18 @@ toolchain go1.24.0
 require (
 	cloud.google.com/go/pubsub v1.43.0
 	github.com/IBM/sarama v1.43.3
+	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/magiconair/properties v1.8.7
 	github.com/nats-io/nats.go v1.39.1
+	github.com/prometheus/client_golang v1.20.5
+	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.4
 	github.com/wagslane/go-rabbitmq v0.14.2
-	golang.org/x/sync v0.10.0
+	golang.org/x/sync v0.12.0
 	google.golang.org/grpc v1.66.2
 	k8s.io/apimachinery v0.30.3
 )
@@ -26,7 +29,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
 	cloud.google.com/go/compute/metadata v0.5.1 // indirect
 	cloud.google.com/go/iam v1.2.1 // indirect
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
@@ -65,7 +67,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.20.5 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.59.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
@@ -79,7 +80,6 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/spf13/viper v1.19.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
@@ -90,12 +90,12 @@ require (
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.opentelemetry.io/otel/trace v1.30.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	google.golang.org/api v0.198.0 // indirect
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
