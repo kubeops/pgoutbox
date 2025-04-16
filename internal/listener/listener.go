@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"kubeops.dev/pgoutbox/apis"
 	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/jackc/pgx"
 	"golang.org/x/sync/errgroup"

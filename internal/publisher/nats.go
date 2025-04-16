@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/goccy/go-json"
 	"github.com/nats-io/nats.go"

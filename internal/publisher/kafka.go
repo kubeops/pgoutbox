@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/IBM/sarama"
 	"github.com/goccy/go-json"

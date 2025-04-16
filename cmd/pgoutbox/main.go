@@ -26,9 +26,9 @@ import (
 	"syscall"
 	"time"
 
-	"kubeops.dev/pgoutbox/apis"
 	"kubeops.dev/pgoutbox/internal/listener"
 	"kubeops.dev/pgoutbox/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/urfave/cli/v2"
 )

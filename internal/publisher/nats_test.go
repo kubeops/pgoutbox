@@ -3,7 +3,7 @@ package publisher
 import (
 	"testing"
 
-	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/utils"
 )
 
 func TestEvent_GetSubjectName(t *testing.T) {
