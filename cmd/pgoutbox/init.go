@@ -22,8 +22,8 @@ import (
 	"log/slog"
 	"time"
 
-	"kubeops.dev/pgoutbox/apis"
 	"kubeops.dev/pgoutbox/internal/publisher"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/jackc/pgx"
 	"github.com/nats-io/nats.go"

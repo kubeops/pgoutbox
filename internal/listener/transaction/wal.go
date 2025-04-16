@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/google/uuid"
 )

@@ -1,4 +1,4 @@
-module kubeops.dev/pgoutbox/apis
+module kubeops.dev/pgoutbox/utils
 
 go 1.23.3
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"kubeops.dev/pgoutbox/apis"
 	trx "kubeops.dev/pgoutbox/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/jackc/pgx"
 	"github.com/stretchr/testify/mock"

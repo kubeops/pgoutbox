@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"kubeops.dev/pgoutbox/apis"
+	"kubeops.dev/pgoutbox/utils"
 
 	"github.com/goccy/go-json"
 )
