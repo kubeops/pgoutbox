@@ -85,7 +85,7 @@ func main() {
 
 			logger := apis.InitSlog(cfg.Logger, version, false)
 
-			conn, rConn, err := initPgxConnections(cfg.Database, logger, time.Minute*30)
+			conn, rConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
 			if err != nil {
 				return fmt.Errorf("pgx connection: %w", err)
 			}

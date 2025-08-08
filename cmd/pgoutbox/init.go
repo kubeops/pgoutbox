@@ -45,16 +45,18 @@ func initPgxConnections(cfg *apis.DatabaseCfg, logger *slog.Logger, timeout time
 		Password: cfg.Password,
 	}
 
-	err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
 		var err error
 		pgConn, err = pgx.Connect(pgxConf)
 		if err != nil {
-			return false, fmt.Errorf("db connection: %w", err)
+			logger.Error("db connection:", slog.String("error", err.Error()))
+			return false, nil
 		}
 
 		pgReplicationConn, err = pgx.ReplicationConnect(pgxConf)
 		if err != nil {
-			return false, fmt.Errorf("replication connect: %w", err)
+			logger.Error("db replication connection:", slog.String("error", err.Error()))
+			return false, nil
 		}
 
 		return true, nil
