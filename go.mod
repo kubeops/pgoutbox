@@ -1,8 +1,6 @@
 module kubeops.dev/pgoutbox
 
-go 1.23.3
-
-toolchain go1.24.0
+go 1.24.0
 
 require (
 	cloud.google.com/go/pubsub v1.43.0
@@ -18,7 +16,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.4
 	github.com/wagslane/go-rabbitmq v0.14.2
-	golang.org/x/sync v0.13.0
+	golang.org/x/sync v0.18.0
 	google.golang.org/grpc v1.66.2
 	k8s.io/apimachinery v0.32.2
 )
@@ -90,12 +88,12 @@ require (
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.opentelemetry.io/otel/trace v1.30.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
-	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	google.golang.org/api v0.198.0 // indirect
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1 // indirect
