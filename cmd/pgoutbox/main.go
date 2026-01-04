@@ -90,7 +90,7 @@ func main() {
 				return fmt.Errorf("pgx connection: %w", err)
 			}
 
-			if err = configureReplicaIdentityToFull(conn, cfg.Listener.Filter); err != nil {
+			if err = configureReplicaIdentityToFull(ctx, conn, cfg.Listener.Filter); err != nil {
 				return fmt.Errorf("configure replica identity: %w", err)
 			}
 			pub, err := factoryPublisher(ctx, cfg.Publisher, logger)
@@ -108,7 +108,7 @@ func main() {
 				cfg,
 				logger,
 				listener.NewRepository(conn),
-				rConn,
+				newReplicationConn(rConn),
 				pub,
 				transaction.NewBinaryParser(logger, binary.BigEndian),
 				apis.NewMetrics(),

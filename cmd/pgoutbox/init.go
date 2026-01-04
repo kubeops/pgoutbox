@@ -25,35 +25,83 @@ import (
 	"kubeops.dev/pgoutbox/apis"
 	"kubeops.dev/pgoutbox/internal/publisher"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pglogrepl"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/nats-io/nats.go"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// initPgxConnections initialise db and replication connections.
-func initPgxConnections(cfg *apis.DatabaseCfg, logger *slog.Logger, timeout time.Duration) (*pgx.Conn, *pgx.ReplicationConn, error) {
-	var pgConn *pgx.Conn
-	var pgReplicationConn *pgx.ReplicationConn
+// replicationConn wraps pgconn.PgConn to implement the replication interface expected by the listener.
+type replicationConn struct {
+	conn *pgconn.PgConn
+}
 
-	pgxConf := pgx.ConnConfig{
-		LogLevel: pgx.LogLevelInfo,
-		Logger:   pgxLogger{logger},
-		Host:     cfg.Host,
-		Port:     cfg.Port,
-		Database: cfg.Name,
-		User:     cfg.User,
-		Password: cfg.Password,
+func newReplicationConn(conn *pgconn.PgConn) *replicationConn {
+	return &replicationConn{conn: conn}
+}
+
+func (r *replicationConn) CreateReplicationSlot(ctx context.Context, slotName, outputPlugin string) (pglogrepl.CreateReplicationSlotResult, error) {
+	return pglogrepl.CreateReplicationSlot(ctx, r.conn, slotName, outputPlugin, pglogrepl.CreateReplicationSlotOptions{})
+}
+
+func (r *replicationConn) DropReplicationSlot(ctx context.Context, slotName string) error {
+	return pglogrepl.DropReplicationSlot(ctx, r.conn, slotName, pglogrepl.DropReplicationSlotOptions{})
+}
+
+func (r *replicationConn) StartReplication(ctx context.Context, slotName string, startLsn pglogrepl.LSN, options pglogrepl.StartReplicationOptions) error {
+	return pglogrepl.StartReplication(ctx, r.conn, slotName, startLsn, options)
+}
+
+func (r *replicationConn) ReceiveMessage(ctx context.Context) ([]byte, error) {
+	rawMsg, err := r.conn.ReceiveMessage(ctx)
+	if err != nil {
+		return nil, err
 	}
+
+	if errMsg, ok := rawMsg.(*pgproto3.ErrorResponse); ok {
+		return nil, fmt.Errorf("received error from postgres: %s", errMsg.Message)
+	}
+
+	msg, ok := rawMsg.(*pgproto3.CopyData)
+	if !ok {
+		return nil, nil
+	}
+
+	return msg.Data, nil
+}
+
+func (r *replicationConn) SendStandbyStatusUpdate(ctx context.Context, status pglogrepl.StandbyStatusUpdate) error {
+	return pglogrepl.SendStandbyStatusUpdate(ctx, r.conn, status)
+}
+
+func (r *replicationConn) IsAlive() bool {
+	return !r.conn.IsClosed()
+}
+
+func (r *replicationConn) Close() error {
+	return r.conn.Close(context.Background())
+}
+
+// initPgxConnections initialise db and replication connections.
+func initPgxConnections(cfg *apis.DatabaseCfg, logger *slog.Logger, timeout time.Duration) (*pgx.Conn, *pgconn.PgConn, error) {
+	var pgConn *pgx.Conn
+	var pgReplConn *pgconn.PgConn
+
+	connString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s",
+		cfg.Host, cfg.Port, cfg.Name, cfg.User, cfg.Password)
+	replConnString := connString + " replication=database"
 
 	err := wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
 		var err error
-		pgConn, err = pgx.Connect(pgxConf)
+		pgConn, err = pgx.Connect(ctx, connString)
 		if err != nil {
 			logger.Error("db connection:", slog.String("error", err.Error()))
 			return false, nil
 		}
 
-		pgReplicationConn, err = pgx.ReplicationConnect(pgxConf)
+		pgReplConn, err = pgconn.Connect(ctx, replConnString)
 		if err != nil {
 			logger.Error("db replication connection:", slog.String("error", err.Error()))
 			return false, nil
@@ -65,27 +113,18 @@ func initPgxConnections(cfg *apis.DatabaseCfg, logger *slog.Logger, timeout time
 		return nil, nil, fmt.Errorf("wait for db connection: %w", err)
 	}
 
-	return pgConn, pgReplicationConn, nil
+	return pgConn, pgReplConn, nil
 }
 
-func configureReplicaIdentityToFull(pgConn *pgx.Conn, filterTables apis.FilterStruct) error {
+func configureReplicaIdentityToFull(ctx context.Context, pgConn *pgx.Conn, filterTables apis.FilterStruct) error {
 	for table := range filterTables.Tables {
-		_, err := pgConn.Exec(fmt.Sprintf("ALTER TABLE %s REPLICA IDENTITY FULL;", table))
+		_, err := pgConn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s REPLICA IDENTITY FULL;", table))
 		if err != nil {
 			return fmt.Errorf("change replica identity to FULL for table %s: %w", table, err)
 		}
 	}
 
 	return nil
-}
-
-type pgxLogger struct {
-	logger *slog.Logger
-}
-
-// Log DB message.
-func (l pgxLogger) Log(_ pgx.LogLevel, msg string, _ map[string]any) {
-	l.logger.Debug(msg)
 }
 
 type eventPublisher interface {

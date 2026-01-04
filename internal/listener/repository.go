@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v5"
 )
 
 // RepositoryImpl service repository.
@@ -22,7 +22,7 @@ func NewRepository(conn *pgx.Conn) *RepositoryImpl {
 func (r RepositoryImpl) GetSlotLSN(ctx context.Context, slotName string) (string, error) {
 	var restartLSNStr string
 
-	err := r.conn.QueryRowEx(ctx, "SELECT restart_lsn FROM pg_replication_slots WHERE slot_name=$1;", nil, slotName).
+	err := r.conn.QueryRow(ctx, "SELECT restart_lsn FROM pg_replication_slots WHERE slot_name=$1;", slotName).
 		Scan(&restartLSNStr)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -34,33 +34,28 @@ func (r RepositoryImpl) GetSlotLSN(ctx context.Context, slotName string) (string
 
 // CreatePublication create publication fo all.
 func (r RepositoryImpl) CreatePublication(ctx context.Context, name string) error {
-	if _, err := r.conn.ExecEx(ctx, `CREATE PUBLICATION "`+name+`" FOR ALL TABLES`, nil); err != nil {
+	if _, err := r.conn.Exec(ctx, `CREATE PUBLICATION "`+name+`" FOR ALL TABLES`); err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
 
 	return nil
 }
 
-// NewStandbyStatus return standby status with WAL positions.
-func (r RepositoryImpl) NewStandbyStatus(walPositions ...uint64) (status *pgx.StandbyStatus, err error) {
-	return pgx.NewStandbyStatus(walPositions...)
-}
-
 // IsAlive check database connection problems.
 func (r RepositoryImpl) IsAlive() bool {
-	return r.conn.IsAlive()
+	return !r.conn.IsClosed()
 }
 
 // Close database connection.
-func (r RepositoryImpl) Close() error {
-	return r.conn.Close()
+func (r RepositoryImpl) Close(ctx context.Context) error {
+	return r.conn.Close(ctx)
 }
 
 // IsReplicationActive returns true if the replication slot is already active, false otherwise.
 func (r RepositoryImpl) IsReplicationActive(ctx context.Context, slotName string) (bool, error) {
 	var activePID int
 
-	err := r.conn.QueryRowEx(ctx, "SELECT active_pid FROM pg_replication_slots WHERE slot_name=$1 AND active=true;", nil, slotName).
+	err := r.conn.QueryRow(ctx, "SELECT active_pid FROM pg_replication_slots WHERE slot_name=$1 AND active=true;", slotName).
 		Scan(&activePID)
 
 	if errors.Is(err, pgx.ErrNoRows) {

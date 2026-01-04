@@ -16,7 +16,7 @@ import (
 	"kubeops.dev/pgoutbox/apis"
 	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pglogrepl"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -32,11 +32,11 @@ type parser interface {
 }
 
 type replication interface {
-	CreateReplicationSlotEx(slotName, outputPlugin string) (consistentPoint string, snapshotName string, err error)
-	DropReplicationSlot(slotName string) (err error)
-	StartReplication(slotName string, startLsn uint64, timeline int64, pluginArguments ...string) (err error)
-	WaitForReplicationMessage(ctx context.Context) (*pgx.ReplicationMessage, error)
-	SendStandbyStatus(k *pgx.StandbyStatus) (err error)
+	CreateReplicationSlot(ctx context.Context, slotName, outputPlugin string) (pglogrepl.CreateReplicationSlotResult, error)
+	DropReplicationSlot(ctx context.Context, slotName string) error
+	StartReplication(ctx context.Context, slotName string, startLsn pglogrepl.LSN, options pglogrepl.StartReplicationOptions) error
+	ReceiveMessage(ctx context.Context) ([]byte, error)
+	SendStandbyStatusUpdate(ctx context.Context, status pglogrepl.StandbyStatusUpdate) error
 	IsAlive() bool
 	Close() error
 }
@@ -44,10 +44,9 @@ type replication interface {
 type repository interface {
 	CreatePublication(ctx context.Context, name string) error
 	GetSlotLSN(ctx context.Context, slotName string) (string, error)
-	NewStandbyStatus(walPositions ...uint64) (status *pgx.StandbyStatus, err error)
 	IsReplicationActive(ctx context.Context, slotName string) (bool, error)
 	IsAlive() bool
-	Close() error
+	Close(ctx context.Context) error
 }
 
 type monitor interface {
@@ -66,7 +65,7 @@ type Listener struct {
 	replicator replication
 	repository repository
 	parser     parser
-	lsn        uint64
+	lsn        pglogrepl.LSN
 	isAlive    atomic.Bool
 }
 
@@ -194,12 +193,12 @@ func (l *Listener) Process(ctx context.Context) error {
 	}
 
 	if !slotIsExists {
-		consistentPoint, _, err := l.replicator.CreateReplicationSlotEx(l.cfg.Listener.SlotName, pgOutputPlugin)
+		result, err := l.replicator.CreateReplicationSlot(ctx, l.cfg.Listener.SlotName, pgOutputPlugin)
 		if err != nil {
 			return fmt.Errorf("create replication slot: %w", err)
 		}
 
-		lsn, err := pgx.ParseLSN(consistentPoint)
+		lsn, err := pglogrepl.ParseLSN(result.ConsistentPoint)
 		if err != nil {
 			return fmt.Errorf("parse lsn: %w", err)
 		}
@@ -275,7 +274,7 @@ func (l *Listener) slotIsExists(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	lsn, err := pgx.ParseLSN(restartLSNStr)
+	lsn, err := pglogrepl.ParseLSN(restartLSNStr)
 	if err != nil {
 		return false, fmt.Errorf("parse lsn: %w", err)
 	}
@@ -299,12 +298,13 @@ const (
 // Stream receives event from PostgreSQL.
 // Accept message, apply filter and publish it in NATS server.
 func (l *Listener) Stream(ctx context.Context) error {
+	pluginArgs := []string{protoVersion, publicationNames(publicationName)}
+
 	if err := l.replicator.StartReplication(
+		ctx,
 		l.cfg.Listener.SlotName,
 		l.readLSN(),
-		-1,
-		protoVersion,
-		publicationNames(publicationName),
+		pglogrepl.StartReplicationOptions{PluginArgs: pluginArgs},
 	); err != nil {
 		return fmt.Errorf("start replication: %w", err)
 	}
@@ -325,97 +325,104 @@ func (l *Listener) Stream(ctx context.Context) error {
 			return nil
 		}
 
-		msg, err := l.replicator.WaitForReplicationMessage(ctx)
+		rawMsg, err := l.replicator.ReceiveMessage(ctx)
 		if err != nil {
-			return fmt.Errorf("wait for replication message: %w", err)
+			return fmt.Errorf("receive message: %w", err)
 		}
 
-		if msg == nil {
+		if rawMsg == nil {
 			l.log.Debug("got empty message")
 			continue
 		}
 
-		if err = l.processMessage(ctx, msg, txWAL); err != nil {
+		if err = l.processRawMessage(ctx, rawMsg, txWAL); err != nil {
 			return fmt.Errorf("process message: %w", err)
 		}
-
-		l.processHeartBeat(msg)
 	}
 }
 
-func (l *Listener) processMessage(ctx context.Context, msg *pgx.ReplicationMessage, txWAL *tx.WAL) error {
-	if msg.WalMessage == nil {
-		l.log.Debug("empty wal-message")
+func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *tx.WAL) error {
+	if len(rawMsg) == 0 {
+		l.log.Debug("empty raw message")
 		return nil
 	}
 
-	l.log.Debug("WAL message has been received", slog.Uint64("wal", msg.WalMessage.WalStart))
+	msgType := rawMsg[0]
 
-	if err := l.parser.ParseWalMessage(msg.WalMessage.WalData, txWAL); err != nil {
-		l.monitor.IncProblematicEvents(problemKindParse)
-		return fmt.Errorf("parse: %w", err)
-	}
+	switch msgType {
+	case pglogrepl.XLogDataByteID:
+		xld, err := pglogrepl.ParseXLogData(rawMsg[1:])
+		if err != nil {
+			return fmt.Errorf("parse xlog data: %w", err)
+		}
 
-	if txWAL.CommitTime != nil {
-		for event := range txWAL.CreateEventsWithFilter(ctx, l.cfg.Listener.Filter.Tables) {
-			subjectName := event.SubjectName(l.cfg)
+		l.log.Debug("WAL message has been received", slog.String("wal", xld.WALStart.String()))
 
-			if err := l.publisher.Publish(ctx, subjectName, event); err != nil {
-				l.monitor.IncProblematicEvents(problemKindPublish)
-				return fmt.Errorf("publish: %w", err)
+		if err := l.parser.ParseWalMessage(xld.WALData, txWAL); err != nil {
+			l.monitor.IncProblematicEvents(problemKindParse)
+			return fmt.Errorf("parse: %w", err)
+		}
+
+		if txWAL.CommitTime != nil {
+			for event := range txWAL.CreateEventsWithFilter(ctx, l.cfg.Listener.Filter.Tables) {
+				subjectName := event.SubjectName(l.cfg)
+
+				if err := l.publisher.Publish(ctx, subjectName, event); err != nil {
+					l.monitor.IncProblematicEvents(problemKindPublish)
+					return fmt.Errorf("publish: %w", err)
+				}
+
+				l.monitor.IncPublishedEvents(subjectName, event.Table)
+
+				l.log.Info(
+					"event was sent",
+					slog.String("subject", subjectName),
+					slog.String("action", event.Action),
+					slog.String("table", event.Table),
+					slog.String("lsn", l.readLSN().String()),
+				)
+
+				txWAL.RetrieveEvent(event)
 			}
 
-			l.monitor.IncPublishedEvents(subjectName, event.Table)
-
-			l.log.Info(
-				"event was sent",
-				slog.String("subject", subjectName),
-				slog.String("action", event.Action),
-				slog.String("table", event.Table),
-				slog.Uint64("lsn", l.readLSN()),
-			)
-
-			txWAL.RetrieveEvent(event)
+			txWAL.Clear()
 		}
 
-		txWAL.Clear()
-	}
+		if xld.WALStart > l.readLSN() {
+			if err := l.AckWalMessage(ctx, xld.WALStart); err != nil {
+				l.monitor.IncProblematicEvents(problemKindAck)
+				return fmt.Errorf("ack: %w", err)
+			}
 
-	if msg.WalMessage.WalStart > l.readLSN() {
-		if err := l.AckWalMessage(msg.WalMessage.WalStart); err != nil {
-			l.monitor.IncProblematicEvents(problemKindAck)
-			return fmt.Errorf("ack: %w", err)
+			l.log.Debug("ack WAL message", slog.String("lsn", l.readLSN().String()))
 		}
 
-		l.log.Debug("ack WAL message", slog.Uint64("lsn", l.readLSN()))
+	case pglogrepl.PrimaryKeepaliveMessageByteID:
+		pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(rawMsg[1:])
+		if err != nil {
+			return fmt.Errorf("parse primary keepalive: %w", err)
+		}
+
+		l.log.Debug(
+			"received server heartbeat",
+			slog.String("server_wal_end", pkm.ServerWALEnd.String()),
+			slog.Time("server_time", pkm.ServerTime),
+		)
+
+		if pkm.ServerWALEnd > l.readLSN() {
+			l.setLSN(pkm.ServerWALEnd)
+		}
+
+		if pkm.ReplyRequested {
+			l.log.Debug("status requested")
+
+			if err := l.SendStandbyStatus(ctx); err != nil {
+				l.log.Warn("send standby status", "err", err)
+			}
+		}
 	}
 
 	return nil
-}
-
-func (l *Listener) processHeartBeat(msg *pgx.ReplicationMessage) {
-	if msg.ServerHeartbeat == nil {
-		l.log.Debug("empty server heartbeat message")
-		return
-	}
-
-	l.log.Debug(
-		"received server heartbeat",
-		slog.Uint64("server_wal_end", msg.ServerHeartbeat.ServerWalEnd),
-		slog.Uint64("server_time", msg.ServerHeartbeat.ServerTime),
-	)
-
-	if msg.ServerHeartbeat.ServerWalEnd > l.readLSN() {
-		l.setLSN(msg.ServerHeartbeat.ServerWalEnd)
-	}
-
-	if msg.ServerHeartbeat.ReplyRequested == 1 {
-		l.log.Debug("status requested")
-
-		if err := l.SendStandbyStatus(); err != nil {
-			l.log.Warn("send standby status", "err", err)
-		}
-	}
 }
 
 func publicationNames(publication string) string {
@@ -424,7 +431,7 @@ func publicationNames(publication string) string {
 
 // Stop is a finalizer function.
 func (l *Listener) Stop() error {
-	if err := l.repository.Close(); err != nil {
+	if err := l.repository.Close(context.Background()); err != nil {
 		return fmt.Errorf("repository close: %w", err)
 	}
 
@@ -448,7 +455,7 @@ func (l *Listener) SendPeriodicHeartbeats(ctx context.Context) {
 			l.log.Warn("periodic heartbeats: context was canceled")
 			return
 		case <-heart.C:
-			if err := l.SendStandbyStatus(); err != nil {
+			if err := l.SendStandbyStatus(ctx); err != nil {
 				l.log.Error("failed to send heartbeat status", "err", err)
 				l.isAlive.Store(false)
 
@@ -461,43 +468,40 @@ func (l *Listener) SendPeriodicHeartbeats(ctx context.Context) {
 	}
 }
 
-// SendStandbyStatus sends a `StandbyStatus` object with the current RestartLSN value to the server.
-func (l *Listener) SendStandbyStatus() error {
+// SendStandbyStatus sends a StandbyStatusUpdate with the current RestartLSN value to the server.
+func (l *Listener) SendStandbyStatus(ctx context.Context) error {
 	lsn := l.readLSN()
 
-	standbyStatus, err := l.repository.NewStandbyStatus(lsn)
-	if err != nil {
-		return fmt.Errorf("unable to create StandbyStatus object: %w", err)
+	status := pglogrepl.StandbyStatusUpdate{
+		WALWritePosition: lsn,
 	}
 
-	standbyStatus.ReplyRequested = 0
-
-	if err = l.replicator.SendStandbyStatus(standbyStatus); err != nil {
-		return fmt.Errorf("unable to send StandbyStatus object: %w", err)
+	if err := l.replicator.SendStandbyStatusUpdate(ctx, status); err != nil {
+		return fmt.Errorf("unable to send StandbyStatusUpdate: %w", err)
 	}
 
 	return nil
 }
 
 // AckWalMessage acknowledge received wal message.
-func (l *Listener) AckWalMessage(lsn uint64) error {
+func (l *Listener) AckWalMessage(ctx context.Context, lsn pglogrepl.LSN) error {
 	l.setLSN(lsn)
 
-	if err := l.SendStandbyStatus(); err != nil {
+	if err := l.SendStandbyStatus(ctx); err != nil {
 		return fmt.Errorf("send status: %w", err)
 	}
 
 	return nil
 }
 
-func (l *Listener) readLSN() uint64 {
+func (l *Listener) readLSN() pglogrepl.LSN {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
 	return l.lsn
 }
 
-func (l *Listener) setLSN(lsn uint64) {
+func (l *Listener) setLSN(lsn pglogrepl.LSN) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
