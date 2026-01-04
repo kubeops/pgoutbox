@@ -35,7 +35,7 @@ import (
 
 // GetVersion returns latest git hash of commit.
 func GetVersion() string {
-	var version = "unknown"
+	version := "unknown"
 
 	info, ok := debug.ReadBuildInfo()
 	if ok {

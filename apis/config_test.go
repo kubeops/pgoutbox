@@ -71,7 +71,7 @@ func TestConfig_Validate(t *testing.T) {
 					TopicPrefix: "prefix",
 				},
 			},
-			wantErr: errors.New("Listener.RefreshConnection: non zero value required;Listener.SlotName: non zero value required"),
+			wantErr: errors.New("Listener.refreshConnection: non zero value required;Listener.slotName: non zero value required"),
 		},
 		{
 			name: "bad db cfg",
@@ -97,7 +97,7 @@ func TestConfig_Validate(t *testing.T) {
 					TopicPrefix: "prefix",
 				},
 			},
-			wantErr: errors.New("Database.Host: non zero value required;Database.Port: non zero value required"),
+			wantErr: errors.New("Database.host: non zero value required;Database.port: non zero value required"),
 		},
 		{
 			name: "empty publisher kind",
@@ -123,7 +123,7 @@ func TestConfig_Validate(t *testing.T) {
 					TopicPrefix: "prefix",
 				},
 			},
-			wantErr: errors.New("Publisher.Type: non zero value required"),
+			wantErr: errors.New("Publisher.address: non zero value required;Publisher.type: non zero value required"),
 		},
 	}
 

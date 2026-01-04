@@ -9,7 +9,7 @@ require (
 	github.com/goccy/go-json v0.10.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pglogrepl v0.0.0-20251213150135-2e8d0df862c1
-	github.com/jackc/pgx/v5 v5.7.4
+	github.com/jackc/pgx/v5 v5.8.0
 	github.com/magiconair/properties v1.8.7
 	github.com/nats-io/nats.go v1.48.0
 	github.com/prometheus/client_golang v1.20.5
