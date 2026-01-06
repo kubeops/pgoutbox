@@ -143,6 +143,8 @@ func (l *Listener) liveness(w http.ResponseWriter, _ *http.Request) {
 		respCode = http.StatusInternalServerError
 
 		l.log.Warn("liveness probe failed")
+	} else {
+		l.log.Debug("liveness probe successful")
 	}
 
 	w.WriteHeader(respCode)
@@ -165,6 +167,8 @@ func (l *Listener) readiness(w http.ResponseWriter, _ *http.Request) {
 		respCode = http.StatusInternalServerError
 
 		l.log.Warn("readiness probe failed")
+	} else {
+		l.log.Debug("readiness probe successful")
 	}
 
 	w.WriteHeader(respCode)
