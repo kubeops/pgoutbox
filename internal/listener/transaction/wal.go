@@ -11,6 +11,7 @@ import (
 	"kubeops.dev/pgoutbox/apis"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pglogrepl"
 )
 
 type monitor interface {
@@ -21,10 +22,10 @@ type monitor interface {
 type WAL struct {
 	log           *slog.Logger
 	monitor       monitor
-	LSN           int64
+	LSN           pglogrepl.LSN
 	BeginTime     *time.Time
 	CommitTime    *time.Time
-	RelationStore map[int32]RelationData
+	RelationStore map[uint32]RelationData
 	Actions       []ActionData
 	pool          *sync.Pool
 }
@@ -39,7 +40,7 @@ func NewWAL(log *slog.Logger, pool *sync.Pool, monitor monitor) *WAL {
 		pool:          pool,
 		log:           log,
 		monitor:       monitor,
-		RelationStore: make(map[int32]RelationData),
+		RelationStore: make(map[uint32]RelationData),
 		Actions:       make([]ActionData, 0, aproxData),
 	}
 }
@@ -61,9 +62,9 @@ func (w *WAL) getPoolEvent() *apis.Event {
 
 // CreateActionData create action from WAL message data.
 func (w *WAL) CreateActionData(
-	relationID int32,
-	oldRows []TupleData,
-	newRows []TupleData,
+	relationID uint32,
+	oldTuple *pglogrepl.TupleData,
+	newTuple *pglogrepl.TupleData,
 	kind ActionKind,
 ) (a ActionData, err error) {
 	rel, ok := w.RelationStore[relationID]
@@ -77,38 +78,42 @@ func (w *WAL) CreateActionData(
 		Kind:   kind,
 	}
 
-	oldColumns := make([]Column, 0, len(oldRows))
+	if oldTuple != nil {
+		oldColumns := make([]Column, 0, len(oldTuple.Columns))
 
-	for num, row := range oldRows {
-		column := InitColumn(
-			w.log,
-			rel.Columns[num].name,
-			nil,
-			rel.Columns[num].valueType,
-			rel.Columns[num].isKey,
-		)
+		for num, col := range oldTuple.Columns {
+			column := InitColumn(
+				w.log,
+				rel.Columns[num].name,
+				nil,
+				rel.Columns[num].valueType,
+				rel.Columns[num].isKey,
+			)
 
-		column.AssertValue(row.Value)
-		oldColumns = append(oldColumns, column)
+			column.AssertValue(col.Data)
+			oldColumns = append(oldColumns, column)
+		}
+
+		a.OldColumns = oldColumns
 	}
 
-	a.OldColumns = oldColumns
+	if newTuple != nil {
+		newColumns := make([]Column, 0, len(newTuple.Columns))
 
-	newColumns := make([]Column, 0, len(newRows))
+		for num, col := range newTuple.Columns {
+			column := InitColumn(
+				w.log,
+				rel.Columns[num].name,
+				nil,
+				rel.Columns[num].valueType,
+				rel.Columns[num].isKey,
+			)
+			column.AssertValue(col.Data)
+			newColumns = append(newColumns, column)
+		}
 
-	for num, row := range newRows {
-		column := InitColumn(
-			w.log,
-			rel.Columns[num].name,
-			nil,
-			rel.Columns[num].valueType,
-			rel.Columns[num].isKey,
-		)
-		column.AssertValue(row.Value)
-		newColumns = append(newColumns, column)
+		a.NewColumns = newColumns
 	}
-
-	a.NewColumns = newColumns
 
 	return a, nil
 }

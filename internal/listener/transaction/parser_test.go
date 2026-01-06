@@ -1,934 +1,279 @@
 package transaction
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"log/slog"
-	"reflect"
 	"testing"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pglogrepl"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBinaryParser_readTupleData(t *testing.T) {
-	type fields struct {
-		buffer *bytes.Buffer
-	}
+var bigEndian = binary.BigEndian
 
-	tests := []struct {
-		name   string
-		fields fields
-		want   []TupleData
-	}{
-		{
-			name: "success",
-			fields: fields{
-				// 0,1 - 1(int16) BigEndian
-				// 116 - t(type, text)
-				// 0,0,0,1 - 1(int32) BigEndian
-				// 116 - t(value, text)
-				buffer: bytes.NewBuffer([]byte{
-					0, 1,
-					116,
-					0, 0, 0, 1,
-					116,
-				}),
-			},
-			want: []TupleData{
-				{
-					Value: []byte{116},
-				},
-			},
-		},
-		{
-			name: "null value",
-			fields: fields{
-				buffer: bytes.NewBuffer([]byte{0, 1, 110, 0, 0, 0, 1, 116}),
-			},
-			want: []TupleData{
-				{},
-			},
-		},
-		{
-			name: "toast value",
-			fields: fields{
-				buffer: bytes.NewBuffer([]byte{0, 1, 117, 0, 0, 0, 1, 116}),
-			},
-			want: []TupleData{
-				{},
-			},
-		},
-	}
-
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    tt.fields.buffer,
-			}
-			if got := p.readTupleData(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("readTupleData() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+// Helper to build BeginMessage bytes
+func buildBeginMessage(finalLSN pglogrepl.LSN, commitTime time.Time, xid uint32) []byte {
+	msg := make([]byte, 1+8+8+4)
+	msg[0] = 'B'
+	bigEndian.PutUint64(msg[1:], uint64(finalLSN))
+	bigEndian.PutUint64(msg[9:], uint64(timeToPgTime(commitTime)))
+	bigEndian.PutUint32(msg[17:], xid)
+	return msg
 }
 
-func TestBinaryParser_readColumns(t *testing.T) {
-	type fields struct {
-		buffer *bytes.Buffer
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   []RelationColumn
-	}{
-		{
-			name: "success",
-			fields: fields{
-				// 0,1 - 1(count rows, int16)
-				// 1 - 0 (isKey bool,int8)
-				// 105,100 - id(field name, text)
-				// 0 - end of string
-				// 0,0,0,25 - 25(pgtype text, int32)
-				// 0,0,0,1 - 1 (modifier, int32)
-				buffer: bytes.NewBuffer([]byte{
-					0, 1,
-					1,
-					105, 100, 0,
-					0, 0, 0, 25,
-					0, 0, 0, 1,
-				}),
-			},
-			want: []RelationColumn{
-				{
-					Key:          true,
-					Name:         "id",
-					TypeID:       pgtype.TextOID,
-					ModifierType: 1,
-				},
-			},
-		},
-	}
-
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    tt.fields.buffer,
-			}
-			if got := p.readColumns(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("readColumns() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+// Helper to build CommitMessage bytes
+func buildCommitMessage(flags uint8, commitLSN, transactionEndLSN pglogrepl.LSN, commitTime time.Time) []byte {
+	msg := make([]byte, 1+1+8+8+8)
+	msg[0] = 'C'
+	msg[1] = flags
+	bigEndian.PutUint64(msg[2:], uint64(commitLSN))
+	bigEndian.PutUint64(msg[10:], uint64(transactionEndLSN))
+	bigEndian.PutUint64(msg[18:], uint64(timeToPgTime(commitTime)))
+	return msg
 }
 
-func TestBinaryParser_getRelationMsg(t *testing.T) {
-	type fields struct {
-		src []byte
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   Relation
-	}{
-		{
-			name: "get relation",
-			// 0,0,0,1 = 1 (relation id int32)
-			// 112, 117, 98, 108, 105, 99 = public (namespace, text)
-			// 0 = end of string
-			// 117, 115, 101, 114, 115 = users (table name, text)
-			// 0 = end of string
-			// 1 = int8, replica
-			// 0 = zero columns
-			fields: fields{
-				src: []byte{
-					0, 0, 0, 1,
-					112, 117, 98, 108, 105, 99, 0,
-					117, 115, 101, 114, 115, 0,
-					1,
-					0,
-				},
-			},
-			want: Relation{
-				ID:        1,
-				Namespace: "public",
-				Name:      "users",
-				Replica:   1,
-				Columns:   []RelationColumn{},
-			},
-		},
+// Helper to build RelationMessage bytes
+func buildRelationMessage(relationID uint32, namespace, relationName string, replicaIdentity uint8, columns []struct {
+	flags    uint8
+	name     string
+	dataType uint32
+	typeMod  int32
+},
+) []byte {
+	// Calculate size
+	size := 1 + 4 + len(namespace) + 1 + len(relationName) + 1 + 1 + 2
+	for _, col := range columns {
+		size += 1 + len(col.name) + 1 + 4 + 4
 	}
 
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    bytes.NewBuffer(tt.fields.src),
-			}
-			if got := p.getRelationMsg(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getRelationMsg() = %v, want %v", got, tt.want)
-			}
-		})
+	msg := make([]byte, size)
+	off := 0
+	msg[off] = 'R'
+	off++
+	bigEndian.PutUint32(msg[off:], relationID)
+	off += 4
+	copy(msg[off:], namespace)
+	off += len(namespace)
+	msg[off] = 0
+	off++
+	copy(msg[off:], relationName)
+	off += len(relationName)
+	msg[off] = 0
+	off++
+	msg[off] = replicaIdentity
+	off++
+	bigEndian.PutUint16(msg[off:], uint16(len(columns)))
+	off += 2
+	for _, col := range columns {
+		msg[off] = col.flags
+		off++
+		copy(msg[off:], col.name)
+		off += len(col.name)
+		msg[off] = 0
+		off++
+		bigEndian.PutUint32(msg[off:], col.dataType)
+		off += 4
+		bigEndian.PutUint32(msg[off:], uint32(col.typeMod))
+		off += 4
 	}
+	return msg
 }
 
-func TestBinaryParser_getUpdateMsg(t *testing.T) {
-	type fields struct {
-		src []byte
+// Helper to build InsertMessage bytes
+func buildInsertMessage(relationID uint32, tupleData [][]byte) []byte {
+	tupleSize := 2
+	for _, data := range tupleData {
+		tupleSize += 1 + 4 + len(data) // type byte + length + data
 	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   Update
-	}{
-		{
-			name: "get message",
-			fields: fields{
-				// 0,0,0,5 = 5 int32, relation id
-				// 79 = O flag - old tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,5 = 5 int32 size (data bytes)
-				// 104, 101, 108, 108, 111 = hello
-				// 78 = N flag - new tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,6 = 6 int32 size (data bytes)
-				// 104, 101, 108, 108, 111, 50  = hello2
-				src: []byte{
-					0, 0, 0, 5,
-					79,
-					0, 1,
-					116,
-					0, 0, 0, 5,
-					104, 101, 108, 108, 111,
-					78,
-					0, 1,
-					116,
-					0, 0, 0, 6,
-					104, 101, 108, 108, 111, 50,
-				},
-			},
-			want: Update{
-				RelationID: 5,
-				KeyTuple:   false,
-				OldTuple:   true,
-				OldRow: []TupleData{
-					{
-						Value: []byte{104, 101, 108, 108, 111},
-					},
-				},
-				NewTuple: false,
-				NewRow: []TupleData{
-					{
-						Value: []byte{104, 101, 108, 108, 111, 50},
-					},
-				},
-			},
-		},
+
+	msg := make([]byte, 1+4+1+tupleSize)
+	off := 0
+	msg[off] = 'I'
+	off++
+	bigEndian.PutUint32(msg[off:], relationID)
+	off += 4
+	msg[off] = 'N' // new tuple marker
+	off++
+	bigEndian.PutUint16(msg[off:], uint16(len(tupleData)))
+	off += 2
+	for _, data := range tupleData {
+		msg[off] = 't' // text type
+		off++
+		bigEndian.PutUint32(msg[off:], uint32(len(data)))
+		off += 4
+		copy(msg[off:], data)
+		off += len(data)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				byteOrder: binary.BigEndian,
-				buffer:    bytes.NewBuffer(tt.fields.src),
-			}
-			got := p.getUpdateMsg()
-			assert.Equal(t, got, tt.want)
-		})
-	}
+	return msg
 }
 
-func TestBinaryParser_getDeleteMsg(t *testing.T) {
-	type fields struct {
-		src []byte
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   Delete
-	}{
-		{
-			name: "parse delete message",
-			fields: fields{
-				// 0,0,0,5 = 5 int32, relation id
-				// 79 = O flag - old tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,5 = 5 int32 size (data bytes)
-				// 105, 100 = id
-				src: []byte{
-					0, 0, 0, 5,
-					79,
-					0, 1,
-					116,
-					0, 0, 0, 5,
-					105, 100,
-				},
-			},
-			want: Delete{
-				RelationID: 5,
-				KeyTuple:   false,
-				OldTuple:   true,
-				OldRow: []TupleData{
-					{
-						Value: []byte{105, 100},
-					},
-				},
-			},
-		},
-	}
-
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    bytes.NewBuffer(tt.fields.src),
-			}
-
-			if got := p.getDeleteMsg(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getDeleteMsg() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+// timeToPgTime converts time.Time to PostgreSQL epoch microseconds
+func timeToPgTime(t time.Time) int64 {
+	pgEpoch := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	return t.Sub(pgEpoch).Microseconds()
 }
 
-func TestBinaryParser_getInsertMsg(t *testing.T) {
-	type fields struct {
-		src []byte
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   Insert
-	}{
-		{
-			name: "parse insert message",
-			fields: fields{
-				// 0,0,0,5 = 5 int32, relation id
-				// 78 = N flag - new tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,6 = 6 int32 size (data bytes)
-				// 104, 101, 108, 108, 111  = hello
-				src: []byte{
-					0, 0, 0, 5,
-					78,
-					0, 1,
-					116,
-					0, 0, 0, 6,
-					104, 101, 108, 108, 111,
-				},
-			},
-			want: Insert{
-				RelationID: 5,
-				NewTuple:   true,
-				NewRow: []TupleData{
-					{
-						Value: []byte{104, 101, 108, 108, 111},
-					},
-				},
-			},
-		},
-	}
-
+func TestParser_ParseWalMessage_BeginMessage(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	parser := NewParser(logger)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    bytes.NewBuffer(tt.fields.src),
-			}
-			if got := p.getInsertMsg(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getInsertMsg() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	finalLSN := pglogrepl.LSN(0x17843B8)
+	commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	xid := uint32(12345)
+
+	msg := buildBeginMessage(finalLSN, commitTime, xid)
+
+	wal := NewWAL(logger, nil, &monitorMock{})
+	err := parser.ParseWalMessage(msg, wal)
+
+	assert.NoError(t, err)
+	assert.Equal(t, finalLSN, wal.LSN)
+	assert.NotNil(t, wal.BeginTime)
+	// Check time within a reasonable tolerance (microsecond precision)
+	assert.WithinDuration(t, commitTime, *wal.BeginTime, time.Microsecond)
 }
 
-func TestBinaryParser_getCommitMsg(t *testing.T) {
-	type fields struct {
-		src []byte
-	}
-
-	tests := []struct {
-		name   string
-		fields fields
-		want   Commit
-	}{
-		{
-			name: "parse commit message",
-			fields: fields{
-				// 0 int8, flag
-				// 7 int64, lsn start
-				// 8 int64, lsn stop
-				// 0 int64, timestamp (start postgres epoch)
-				src: []byte{
-					0,
-					0, 0, 0, 0, 0, 0, 0, 7,
-					0, 0, 0, 0, 0, 0, 0, 8,
-					0, 0, 0, 0, 0, 0, 0, 0,
-				},
-			},
-			want: Commit{
-				Flags:          0,
-				LSN:            7,
-				TransactionLSN: 8,
-				Timestamp:      postgresEpoch,
-			},
-		},
-	}
-
+func TestParser_ParseWalMessage_CommitMessage(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	parser := NewParser(logger)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    bytes.NewBuffer(tt.fields.src),
-			}
-			if got := p.getCommitMsg(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getCommitMsg() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	commitLSN := pglogrepl.LSN(0x17843B8)
+	transactionEndLSN := pglogrepl.LSN(0x17843C0)
+	commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+
+	// First set up WAL with matching LSN from Begin
+	wal := NewWAL(logger, nil, &monitorMock{})
+	wal.LSN = commitLSN
+
+	msg := buildCommitMessage(0, commitLSN, transactionEndLSN, commitTime)
+	err := parser.ParseWalMessage(msg, wal)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, wal.CommitTime)
+	assert.WithinDuration(t, commitTime, *wal.CommitTime, time.Microsecond)
 }
 
-func TestBinaryParser_getBeginMsg(t *testing.T) {
-	type fields struct {
-		src []byte
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   Begin
-	}{
-		{
-			name: "parse begin message",
-			fields: fields{
-				// int64 lsn
-				// int64 timestamp
-				// int32 transaction id
-				src: []byte{
-					0, 0, 0, 0, 0, 0, 0, 7,
-					0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 5,
-				},
-			},
-			want: Begin{
-				LSN:       7,
-				Timestamp: postgresEpoch,
-				XID:       5,
-			},
-		},
-	}
-
+func TestParser_ParseWalMessage_CommitMessage_LSNMismatch(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	parser := NewParser(logger)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-				buffer:    bytes.NewBuffer(tt.fields.src),
-			}
+	commitLSN := pglogrepl.LSN(0x17843B8)
+	differentLSN := pglogrepl.LSN(0x17843C0)
+	commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 
-			if got := p.getBeginMsg(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getBeginMsg() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	// Set up WAL with different LSN
+	wal := NewWAL(logger, nil, &monitorMock{})
+	wal.LSN = differentLSN
+
+	msg := buildCommitMessage(0, commitLSN, commitLSN, commitTime)
+	err := parser.ParseWalMessage(msg, wal)
+
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrMessageLost)
 }
 
-func TestBinaryParser_ParseWalMessage(t *testing.T) {
-	type args struct {
-		msg []byte
-		tx  *WAL
-	}
-
+func TestParser_ParseWalMessage_RelationMessage(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	metrics := new(monitorMock)
+	parser := NewParser(logger)
 
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-		want    *WAL
+	relationID := uint32(16385)
+	namespace := "public"
+	relationName := "users"
+	columns := []struct {
+		flags    uint8
+		name     string
+		dataType uint32
+		typeMod  int32
 	}{
-		{
-			name:    "empty data",
-			args:    args{},
-			wantErr: true,
-		},
-		{
-			name: "begin message",
-			args: args{
-				msg: []byte{
-					66,
-					0, 0, 0, 0, 0, 0, 0, 7,
-					0, 0, 0, 0, 0, 0, 0, 0,
-					0, 0, 0, 5,
-				},
-				tx: NewWAL(logger, nil, metrics),
-			},
-			want: &WAL{
-				pool:          nil,
-				log:           logger,
-				LSN:           7,
-				monitor:       metrics,
-				BeginTime:     &postgresEpoch,
-				RelationStore: make(map[int32]RelationData),
-				Actions:       make([]ActionData, 0),
-			},
-			wantErr: false,
-		},
-		{
-			name: "commit message",
-			args: args{
-				msg: []byte{
-					67,
-					0,
-					0, 0, 0, 0, 0, 0, 0, 7,
-					0, 0, 0, 0, 0, 0, 0, 8,
-					0, 0, 0, 0, 0, 0, 0, 0,
-				},
-				tx: &WAL{
-					log:           logger,
-					LSN:           7,
-					monitor:       metrics,
-					BeginTime:     &postgresEpoch,
-					RelationStore: make(map[int32]RelationData),
-				},
-			},
-			want: &WAL{
-				log:           logger,
-				LSN:           7,
-				monitor:       metrics,
-				BeginTime:     &postgresEpoch,
-				CommitTime:    &postgresEpoch,
-				RelationStore: make(map[int32]RelationData),
-			},
-			wantErr: false,
-		},
-		{
-			name: "relation message",
-			args: args{
-				// 82 - R
-				// 3 - int32 relation id
-				// public
-				// users
-				// int8 replica ?
-				// int16 rows count
-				// int8 isKey bool
-				// field name
-				// filed type pgtype
-				// modificator?
-				msg: []byte{
-					82,
-					0, 0, 0, 3,
-					112, 117, 98, 108, 105, 99, 0,
-					117, 115, 101, 114, 115, 0,
-					1,
-					0, 1,
-					1,
-					105, 100, 0,
-					0, 0, 0, 23,
-					0, 0, 0, 1,
-				},
-				tx: &WAL{
-					log:           logger,
-					LSN:           3,
-					monitor:       metrics,
-					BeginTime:     &postgresEpoch,
-					CommitTime:    &postgresEpoch,
-					RelationStore: make(map[int32]RelationData),
-				},
-			},
-			want: &WAL{
-				log:        logger,
-				monitor:    metrics,
-				LSN:        3,
-				BeginTime:  &postgresEpoch,
-				CommitTime: &postgresEpoch,
-				RelationStore: map[int32]RelationData{
-					3: {
-						Schema: "public",
-						Table:  "users",
-						Columns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     nil,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "insert message",
-			args: args{
-				// 73 - I
-				// 3 - int32 relation id
-				// public
-				// users
-				// int8 replica ?
-				// int16 rows count
-				// int8 isKey bool
-				// field name
-				// filed type pgtype
-				// modificator?
-				msg: []byte{
-					73,
-					0, 0, 0, 2,
-					78,
-					0, 1,
-					116,
-					0, 0, 0, 6,
-					49, 48,
-				},
-				tx: &WAL{
-					monitor:    metrics,
-					log:        logger,
-					LSN:        4,
-					BeginTime:  &postgresEpoch,
-					CommitTime: &postgresEpoch,
-					RelationStore: map[int32]RelationData{
-						2: {
-							Schema: "public",
-							Table:  "users",
-							Columns: []Column{
-								{
-									log:       logger,
-									name:      "id",
-									value:     nil,
-									valueType: pgtype.Int4OID,
-									isKey:     true,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: &WAL{
-				monitor:    metrics,
-				log:        logger,
-				LSN:        4,
-				BeginTime:  &postgresEpoch,
-				CommitTime: &postgresEpoch,
-				RelationStore: map[int32]RelationData{
-					2: {
-						Schema: "public",
-						Table:  "users",
-						Columns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     nil,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-				Actions: []ActionData{
-					{
-						Schema: "public",
-						Table:  "users",
-						Kind:   ActionKindInsert,
-						NewColumns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     10,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-						OldColumns: []Column{},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "parse update message",
-			args: args{
-				// 85 - U
-				// 0,0,0,5 = 5 int32, relation id
-				// 79 = O flag - old tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,2 = 2 int32 size (data bytes)
-				// 55, 55 = 77
-				// 78 = N flag - new tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,2 = 2 int32 size (data bytes)
-				// 56, 48  = 80
-				msg: []byte{
-					85,
-					0, 0, 0, 5,
-					79,
-					0, 1,
-					116,
-					0, 0, 0, 2,
-					55, 55,
-					78,
-					0, 1,
-					116,
-					0, 0, 0, 2,
-					56, 48,
-				},
-				tx: &WAL{
-					log:        logger,
-					monitor:    metrics,
-					LSN:        4,
-					BeginTime:  &postgresEpoch,
-					CommitTime: &postgresEpoch,
-					RelationStore: map[int32]RelationData{
-						5: {
-							Schema: "public",
-							Table:  "users",
-							Columns: []Column{
-								{
-									log:       logger,
-									name:      "id",
-									value:     nil,
-									valueType: pgtype.Int4OID,
-									isKey:     true,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: &WAL{
-				monitor:    metrics,
-				log:        logger,
-				LSN:        4,
-				BeginTime:  &postgresEpoch,
-				CommitTime: &postgresEpoch,
-				RelationStore: map[int32]RelationData{
-					5: {
-						Schema: "public",
-						Table:  "users",
-						Columns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     nil,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-				Actions: []ActionData{
-					{
-						Schema: "public",
-						Table:  "users",
-						Kind:   ActionKindUpdate,
-						OldColumns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     77,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-						NewColumns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     80,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "parse delete message",
-			args: args{
-				// 68 - D,
-				// 0,0,0,5 = 5 int32, relation id
-				// 79 = O flag - old tuple data
-				// 0,1 = 1 int16 - count of rows
-				// 116 = t data type text
-				// 0,0,0,2 = 2 int32 size (data bytes)
-				// 55,55 = 77
-				msg: []byte{
-					68,
-					0, 0, 0, 5,
-					79,
-					0, 1,
-					116,
-					0, 0, 0, 2,
-					55, 55,
-				},
-				tx: &WAL{
-					monitor:    metrics,
-					log:        logger,
-					LSN:        4,
-					BeginTime:  &postgresEpoch,
-					CommitTime: &postgresEpoch,
-					RelationStore: map[int32]RelationData{
-						5: {
-							Schema: "public",
-							Table:  "users",
-							Columns: []Column{
-								{
-									log:       logger,
-									name:      "id",
-									value:     nil,
-									valueType: pgtype.Int4OID,
-									isKey:     true,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: &WAL{
-				monitor:    metrics,
-				log:        logger,
-				LSN:        4,
-				BeginTime:  &postgresEpoch,
-				CommitTime: &postgresEpoch,
-				RelationStore: map[int32]RelationData{
-					5: {
-						Schema: "public",
-						Table:  "users",
-						Columns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     nil,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-				Actions: []ActionData{
-					{
-						Schema:     "public",
-						Table:      "users",
-						Kind:       ActionKindDelete,
-						NewColumns: []Column{},
-						OldColumns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     77,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "unknown message type",
-			args: args{
-				msg: []byte{
-					11,
-					0, 0, 0, 5,
-					79,
-					0, 1,
-					116,
-					0, 0, 0, 2,
-					55, 55,
-				},
-				tx: &WAL{
-					monitor:    metrics,
-					log:        logger,
-					LSN:        4,
-					BeginTime:  &postgresEpoch,
-					CommitTime: &postgresEpoch,
-					RelationStore: map[int32]RelationData{
-						5: {
-							Schema: "public",
-							Table:  "users",
-							Columns: []Column{
-								{
-									log:       logger,
-									name:      "id",
-									value:     nil,
-									valueType: pgtype.Int4OID,
-									isKey:     true,
-								},
-							},
-						},
-					},
-				},
-			},
-			want: &WAL{
-				monitor:    metrics,
-				log:        logger,
-				LSN:        4,
-				BeginTime:  &postgresEpoch,
-				CommitTime: &postgresEpoch,
-				RelationStore: map[int32]RelationData{
-					5: {
-						Schema: "public",
-						Table:  "users",
-						Columns: []Column{
-							{
-								log:       logger,
-								name:      "id",
-								value:     nil,
-								valueType: pgtype.Int4OID,
-								isKey:     true,
-							},
-						},
-					},
-				},
-			},
-			wantErr: true,
+		{flags: 1, name: "id", dataType: 23, typeMod: -1},      // int4, key
+		{flags: 0, name: "name", dataType: 25, typeMod: -1},    // text
+		{flags: 0, name: "email", dataType: 1043, typeMod: -1}, // varchar
+	}
+
+	msg := buildRelationMessage(relationID, namespace, relationName, 1, columns)
+
+	wal := NewWAL(logger, nil, &monitorMock{})
+	wal.LSN = pglogrepl.LSN(0x17843B8) // Must have LSN set
+
+	err := parser.ParseWalMessage(msg, wal)
+
+	assert.NoError(t, err)
+	assert.Contains(t, wal.RelationStore, relationID)
+
+	rd := wal.RelationStore[relationID]
+	assert.Equal(t, namespace, rd.Schema)
+	assert.Equal(t, relationName, rd.Table)
+	assert.Len(t, rd.Columns, 3)
+	assert.Equal(t, "id", rd.Columns[0].name)
+	assert.True(t, rd.Columns[0].isKey)
+	assert.Equal(t, "name", rd.Columns[1].name)
+	assert.False(t, rd.Columns[1].isKey)
+}
+
+func TestParser_ParseWalMessage_RelationMessage_NoLSN(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	parser := NewParser(logger)
+
+	msg := buildRelationMessage(16385, "public", "users", 1, nil)
+
+	wal := NewWAL(logger, nil, &monitorMock{})
+	// LSN is 0
+
+	err := parser.ParseWalMessage(msg, wal)
+
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrMessageLost)
+}
+
+func TestParser_ParseWalMessage_InsertMessage(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	parser := NewParser(logger)
+
+	relationID := uint32(16385)
+	tupleData := [][]byte{
+		[]byte("1"),
+		[]byte("John Doe"),
+		[]byte("john@example.com"),
+	}
+
+	// First set up the relation in WAL
+	wal := NewWAL(logger, nil, &monitorMock{})
+	wal.LSN = pglogrepl.LSN(0x17843B8)
+	wal.RelationStore[relationID] = RelationData{
+		Schema: "public",
+		Table:  "users",
+		Columns: []Column{
+			InitColumn(logger, "id", nil, Int4OID, true),
+			InitColumn(logger, "name", nil, TextOID, false),
+			InitColumn(logger, "email", nil, VarcharOID, false),
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &BinaryParser{
-				log:       logger,
-				byteOrder: binary.BigEndian,
-			}
+	msg := buildInsertMessage(relationID, tupleData)
+	err := parser.ParseWalMessage(msg, wal)
 
-			if err := p.ParseWalMessage(tt.args.msg, tt.args.tx); (err != nil) != tt.wantErr {
-				t.Errorf("ParseWalMessage() error = %v, wantErr %v", err, tt.wantErr)
-			}
+	assert.NoError(t, err)
+	assert.Len(t, wal.Actions, 1)
 
-			assert.Equal(t, tt.want, tt.args.tx)
-		})
-	}
+	action := wal.Actions[0]
+	assert.Equal(t, "public", action.Schema)
+	assert.Equal(t, "users", action.Table)
+	assert.Equal(t, ActionKindInsert, action.Kind)
+	assert.Len(t, action.NewColumns, 3)
+	assert.Equal(t, 1, action.NewColumns[0].value)
+	assert.Equal(t, "John Doe", action.NewColumns[1].value)
+	assert.Equal(t, "john@example.com", action.NewColumns[2].value)
+}
+
+func TestParser_ParseWalMessage_EmptyMessage(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	parser := NewParser(logger)
+
+	wal := NewWAL(logger, nil, &monitorMock{})
+	err := parser.ParseWalMessage([]byte{}, wal)
+
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrEmptyWALMessage)
 }

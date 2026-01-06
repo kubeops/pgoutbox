@@ -49,7 +49,7 @@ type ListenerCfg struct {
 type PublisherCfg struct {
 	Type            PublisherType `valid:"required" json:"type" mapstructure:"type"`
 	Address         string        `valid:"required" json:"address" mapstructure:"address"`
-	NatsCredPath    string        `valid:"required" json:"natsCredPath" mapstructure:"natsCredPath"`
+	NatsCredPath    string        `json:"natsCredPath" mapstructure:"natsCredPath"`
 	Topic           string        `valid:"required" json:"topic" mapstructure:"topic"`
 	TopicPrefix     string        `json:"topicPrefix" mapstructure:"topicPrefix"`
 	EnableTLS       bool          `json:"enableTLS" mapstructure:"enableTlS"`

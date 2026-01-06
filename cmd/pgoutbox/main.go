@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
@@ -122,7 +121,7 @@ func main() {
 				listener.NewRepository(pgxConn),
 				newReplicationConn(pgConn),
 				pub,
-				transaction.NewBinaryParser(logger, binary.BigEndian),
+				transaction.NewParser(logger),
 				metrics,
 			)
 
