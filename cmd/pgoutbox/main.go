@@ -35,7 +35,7 @@ import (
 
 // GetVersion returns latest git hash of commit.
 func GetVersion() string {
-	var version = "unknown"
+	version := "unknown"
 
 	info, ok := debug.ReadBuildInfo()
 	if ok {
@@ -85,12 +85,12 @@ func main() {
 
 			logger := apis.InitSlog(cfg.Logger, version, false)
 
-			conn, rConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
+			pgxConn, pgConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
 			if err != nil {
 				return fmt.Errorf("pgx connection: %w", err)
 			}
 
-			if err = configureReplicaIdentityToFull(conn, cfg.Listener.Filter); err != nil {
+			if err = configureReplicaIdentityToFull(ctx, pgxConn, cfg.Listener.Filter); err != nil {
 				return fmt.Errorf("configure replica identity: %w", err)
 			}
 			pub, err := factoryPublisher(ctx, cfg.Publisher, logger)
@@ -107,8 +107,8 @@ func main() {
 			svc := listener.NewWalListener(
 				cfg,
 				logger,
-				listener.NewRepository(conn),
-				rConn,
+				listener.NewRepository(pgxConn),
+				newReplicationConn(pgConn),
 				pub,
 				transaction.NewBinaryParser(logger, binary.BigEndian),
 				apis.NewMetrics(),

@@ -7,7 +7,7 @@ import (
 	"kubeops.dev/pgoutbox/apis"
 	trx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
-	"github.com/jackc/pgx"
+	"github.com/jackc/pglogrepl"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -56,37 +56,31 @@ type replicatorMock struct {
 	mock.Mock
 }
 
-func (r *replicatorMock) CreateReplicationSlotEx(slotName, outputPlugin string) (
-	consistentPoint string,
-	snapshotName string,
-	err error,
-) {
-	args := r.Called(slotName, outputPlugin)
-	return args.Get(0).(string), args.Get(1).(string), args.Error(2)
+func (r *replicatorMock) CreateReplicationSlot(ctx context.Context, slotName, outputPlugin string) (pglogrepl.CreateReplicationSlotResult, error) {
+	args := r.Called(ctx, slotName, outputPlugin)
+	return args.Get(0).(pglogrepl.CreateReplicationSlotResult), args.Error(1)
 }
 
-func (r *replicatorMock) DropReplicationSlot(slotName string) (err error) {
-	args := r.Called(slotName)
-	return args.Error(1)
-}
-
-func (r *replicatorMock) StartReplication(
-	slotName string,
-	startLsn uint64,
-	timeline int64,
-	pluginArguments ...string,
-) (err error) {
-	args := r.Called(slotName, startLsn, timeline, pluginArguments)
+func (r *replicatorMock) DropReplicationSlot(ctx context.Context, slotName string) error {
+	args := r.Called(ctx, slotName)
 	return args.Error(0)
 }
 
-func (r *replicatorMock) WaitForReplicationMessage(ctx context.Context) (mess *pgx.ReplicationMessage, err error) {
-	args := r.Called(ctx)
-	return args.Get(0).(*pgx.ReplicationMessage), args.Error(1)
+func (r *replicatorMock) StartReplication(ctx context.Context, slotName string, startLsn pglogrepl.LSN, options pglogrepl.StartReplicationOptions) error {
+	args := r.Called(ctx, slotName, startLsn, options)
+	return args.Error(0)
 }
 
-func (r *replicatorMock) SendStandbyStatus(status *pgx.StandbyStatus) (err error) {
-	return r.Called(status).Error(0)
+func (r *replicatorMock) ReceiveMessage(ctx context.Context) ([]byte, error) {
+	args := r.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (r *replicatorMock) SendStandbyStatusUpdate(ctx context.Context, status pglogrepl.StandbyStatusUpdate) error {
+	return r.Called(ctx, status).Error(0)
 }
 
 func (r *replicatorMock) IsAlive() bool {

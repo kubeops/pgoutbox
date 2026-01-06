@@ -40,7 +40,7 @@ func TestEvent_GetSubjectName(t *testing.T) {
 					Publisher: &apis.PublisherCfg{TopicPrefix: "prefix_", Topic: "STREAM"},
 				},
 			},
-			want: "STREAM.prefix_public_users",
+			want: "STREAM.prefix_schemas.public.tables.users",
 		},
 	}
 
