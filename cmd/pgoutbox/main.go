@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log/slog"
@@ -29,6 +30,7 @@ import (
 	"kubeops.dev/pgoutbox/apis"
 	"kubeops.dev/pgoutbox/internal/listener"
 	"kubeops.dev/pgoutbox/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/internal/telemetry"
 
 	"github.com/urfave/cli/v2"
 )
@@ -85,6 +87,19 @@ func main() {
 
 			logger := apis.InitSlog(cfg.Logger, version, false)
 
+			if cfg.Telemetry == nil || cfg.Telemetry.PrometheusEnabled {
+				if err = telemetry.InitMetrics(ctx, version); err != nil {
+					return fmt.Errorf("initialize telemetry: %w", err)
+				}
+				defer func() {
+					shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer shutdownCancel()
+					if err := telemetry.Shutdown(shutdownCtx); err != nil {
+						slog.Error("telemetry shutdown failed", "err", err)
+					}
+				}()
+			}
+
 			pgxConn, pgConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
 			if err != nil {
 				return fmt.Errorf("pgx connection: %w", err)
@@ -104,15 +119,30 @@ func main() {
 				}
 			}()
 
+			metrics, err := apis.NewMetrics()
+			if err != nil {
+				return fmt.Errorf("initialize metrics: %w", err)
+			}
+
+			repo := listener.NewRepository(pgxConn)
+			repl := newReplicationConn(pgConn)
+
 			svc := listener.NewWalListener(
 				cfg,
 				logger,
-				listener.NewRepository(pgxConn),
-				newReplicationConn(pgConn),
+				repo,
+				repl,
 				pub,
 				transaction.NewBinaryParser(logger, binary.BigEndian),
-				apis.NewMetrics(),
+				metrics,
 			)
+
+			if err := metrics.RegisterCallbacks(apis.GaugeCallbacks{
+				GetCurrentLSN: func() uint64 { return uint64(svc.ReadLSN()) },
+				GetServerLSN:  func() uint64 { return uint64(svc.ReadServerLSN()) },
+			}); err != nil {
+				return fmt.Errorf("register metrics callbacks: %w", err)
+			}
 
 			go svc.InitHandlers(ctx)
 

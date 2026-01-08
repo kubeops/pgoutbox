@@ -17,6 +17,7 @@ import (
 	tx "kubeops.dev/pgoutbox/internal/listener/transaction"
 
 	"github.com/jackc/pglogrepl"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -53,6 +54,8 @@ type monitor interface {
 	IncPublishedEvents(subject, table string)
 	IncFilterSkippedEvents(table string)
 	IncProblematicEvents(kind string)
+	RecordProcessingDuration(seconds float64)
+	RecordPublishDuration(seconds float64, subject string)
 }
 
 // Listener main service struct.
@@ -66,6 +69,7 @@ type Listener struct {
 	repository repository
 	parser     parser
 	lsn        pglogrepl.LSN
+	serverLSN  pglogrepl.LSN
 	isAlive    atomic.Bool
 }
 
@@ -108,6 +112,10 @@ func (l *Listener) InitHandlers(ctx context.Context) {
 	handler := http.NewServeMux()
 	handler.HandleFunc("GET /healthz", l.liveness)
 	handler.HandleFunc("GET /ready", l.readiness)
+
+	if l.cfg.Telemetry == nil || l.cfg.Telemetry.PrometheusEnabled {
+		handler.Handle("GET /metrics", promhttp.Handler())
+	}
 
 	addr := ":" + strconv.Itoa(l.cfg.Listener.ServerPort)
 	srv := http.Server{
@@ -174,7 +182,7 @@ func (l *Listener) readiness(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(respCode)
 
 	if _, err := w.Write(resp); err != nil {
-		l.log.Error("liveness: error writing response", "err", err)
+		l.log.Error("readiness: error writing response", "err", err)
 	}
 }
 
@@ -355,6 +363,7 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 
 	switch msgType {
 	case pglogrepl.XLogDataByteID:
+		start := time.Now()
 		xld, err := pglogrepl.ParseXLogData(rawMsg[1:])
 		if err != nil {
 			return fmt.Errorf("parse xlog data: %w", err)
@@ -364,6 +373,7 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 
 		if err := l.parser.ParseWalMessage(xld.WALData, txWAL); err != nil {
 			l.monitor.IncProblematicEvents(problemKindParse)
+			l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
 			return fmt.Errorf("parse: %w", err)
 		}
 
@@ -371,10 +381,13 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 			for event := range txWAL.CreateEventsWithFilter(ctx, l.cfg.Listener.Filter.Tables) {
 				subjectName := event.SubjectName(l.cfg)
 
+				publishStart := time.Now()
 				if err := l.publisher.Publish(ctx, subjectName, event); err != nil {
 					l.monitor.IncProblematicEvents(problemKindPublish)
+					l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
 					return fmt.Errorf("publish: %w", err)
 				}
+				l.monitor.RecordPublishDuration(time.Since(publishStart).Seconds(), subjectName)
 
 				l.monitor.IncPublishedEvents(subjectName, event.Table)
 
@@ -395,11 +408,14 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 		if xld.WALStart > l.readLSN() {
 			if err := l.AckWalMessage(ctx, xld.WALStart); err != nil {
 				l.monitor.IncProblematicEvents(problemKindAck)
+				l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
 				return fmt.Errorf("ack: %w", err)
 			}
 
 			l.log.Debug("ack WAL message", slog.String("lsn", l.readLSN().String()))
 		}
+
+		l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
 
 	case pglogrepl.PrimaryKeepaliveMessageByteID:
 		pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(rawMsg[1:])
@@ -412,6 +428,8 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 			slog.String("server_wal_end", pkm.ServerWALEnd.String()),
 			slog.Time("server_time", pkm.ServerTime),
 		)
+
+		l.setServerLSN(pkm.ServerWALEnd)
 
 		if pkm.ServerWALEnd > l.readLSN() {
 			l.setLSN(pkm.ServerWALEnd)
@@ -510,4 +528,25 @@ func (l *Listener) setLSN(lsn pglogrepl.LSN) {
 	defer l.mu.Unlock()
 
 	l.lsn = lsn
+}
+
+func (l *Listener) setServerLSN(lsn pglogrepl.LSN) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.serverLSN = lsn
+}
+
+func (l *Listener) ReadLSN() pglogrepl.LSN {
+	return l.readLSN()
+}
+
+func (l *Listener) ReadServerLSN() pglogrepl.LSN {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.serverLSN
+}
+
+func (l *Listener) IsServiceAlive() bool {
+	return l.isAlive.Load()
 }
