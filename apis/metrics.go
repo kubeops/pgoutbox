@@ -42,9 +42,8 @@ type Metrics struct {
 	processingDuration metric.Float64Histogram
 	publishDuration    metric.Float64Histogram
 
-	// Gauges (observable)
-	replicationLagBytes metric.Int64ObservableGauge
-	currentLSN          metric.Int64ObservableGauge
+	// Gauges
+	currentLSN metric.Int64Gauge
 }
 
 func NewMetrics() (*Metrics, error) {
@@ -97,16 +96,7 @@ func NewMetrics() (*Metrics, error) {
 		return nil, err
 	}
 
-	replicationLagBytes, err := meter.Int64ObservableGauge(
-		"pgoutbox.replication.lag.bytes",
-		metric.WithDescription("Replication lag in bytes (difference between server WAL end and current LSN)"),
-		metric.WithUnit("By"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	currentLSN, err := meter.Int64ObservableGauge(
+	currentLSN, err := meter.Int64Gauge(
 		"pgoutbox.replication.lsn",
 		metric.WithDescription("Current LSN position in the replication stream"),
 		metric.WithUnit("{position}"),
@@ -116,21 +106,20 @@ func NewMetrics() (*Metrics, error) {
 	}
 
 	return &Metrics{
-		eventsPublished:     eventsPublished,
-		eventsFiltered:      eventsFiltered,
-		eventsFailed:        eventsFailed,
-		processingDuration:  processingDuration,
-		publishDuration:     publishDuration,
-		replicationLagBytes: replicationLagBytes,
-		currentLSN:          currentLSN,
+		eventsPublished:    eventsPublished,
+		eventsFiltered:     eventsFiltered,
+		eventsFailed:       eventsFailed,
+		processingDuration: processingDuration,
+		publishDuration:    publishDuration,
+		currentLSN:         currentLSN,
 	}, nil
 }
 
-func (m *Metrics) IncPublishedEvents(subject, table string) {
+func (m *Metrics) IncPublishedEvents(ctx context.Context, subject, table string) {
 	if m == nil || m.eventsPublished == nil {
 		return
 	}
-	m.eventsPublished.Add(context.Background(), 1,
+	m.eventsPublished.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String(attrKeySubject, subject),
 			attribute.String(attrKeyTable, table),
@@ -138,72 +127,43 @@ func (m *Metrics) IncPublishedEvents(subject, table string) {
 	)
 }
 
-func (m *Metrics) IncFilterSkippedEvents(table string) {
+func (m *Metrics) IncFilterSkippedEvents(ctx context.Context, table string) {
 	if m == nil || m.eventsFiltered == nil {
 		return
 	}
-	m.eventsFiltered.Add(context.Background(), 1,
+	m.eventsFiltered.Add(ctx, 1,
 		metric.WithAttributes(attribute.String(attrKeyTable, table)),
 	)
 }
 
-func (m *Metrics) IncProblematicEvents(kind string) {
+func (m *Metrics) IncProblematicEvents(ctx context.Context, kind string) {
 	if m == nil || m.eventsFailed == nil {
 		return
 	}
-	m.eventsFailed.Add(context.Background(), 1,
+	m.eventsFailed.Add(ctx, 1,
 		metric.WithAttributes(attribute.String(attrKeyKind, kind)),
 	)
 }
 
-func (m *Metrics) RecordProcessingDuration(seconds float64) {
+func (m *Metrics) RecordProcessingDuration(ctx context.Context, seconds float64) {
 	if m == nil || m.processingDuration == nil {
 		return
 	}
-	m.processingDuration.Record(context.Background(), seconds)
+	m.processingDuration.Record(ctx, seconds)
 }
 
-func (m *Metrics) RecordPublishDuration(seconds float64, subject string) {
+func (m *Metrics) RecordPublishDuration(ctx context.Context, seconds float64, subject string) {
 	if m == nil || m.publishDuration == nil {
 		return
 	}
-	m.publishDuration.Record(context.Background(), seconds,
+	m.publishDuration.Record(ctx, seconds,
 		metric.WithAttributes(attribute.String(attrKeySubject, subject)),
 	)
 }
 
-type GaugeCallbacks struct {
-	GetCurrentLSN func() uint64
-	GetServerLSN  func() uint64
-}
-
-func (m *Metrics) RegisterCallbacks(cb GaugeCallbacks) error {
-	if m == nil {
-		return nil
+func (m *Metrics) RecordLSN(ctx context.Context, lsn int64) {
+	if m == nil || m.currentLSN == nil {
+		return
 	}
-
-	meter := otel.Meter(meterName)
-
-	_, err := meter.RegisterCallback(
-		func(ctx context.Context, o metric.Observer) error {
-			if cb.GetCurrentLSN != nil {
-				currentLSN := cb.GetCurrentLSN()
-				o.ObserveInt64(m.currentLSN, int64(currentLSN))
-				if cb.GetServerLSN != nil {
-					serverLSN := cb.GetServerLSN()
-					if serverLSN > currentLSN {
-						o.ObserveInt64(m.replicationLagBytes, int64(serverLSN-currentLSN))
-					} else {
-						o.ObserveInt64(m.replicationLagBytes, 0)
-					}
-				}
-			}
-
-			return nil
-		},
-		m.currentLSN,
-		m.replicationLagBytes,
-	)
-
-	return err
+	m.currentLSN.Record(ctx, lsn)
 }

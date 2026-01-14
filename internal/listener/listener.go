@@ -51,11 +51,12 @@ type repository interface {
 }
 
 type monitor interface {
-	IncPublishedEvents(subject, table string)
-	IncFilterSkippedEvents(table string)
-	IncProblematicEvents(kind string)
-	RecordProcessingDuration(seconds float64)
-	RecordPublishDuration(seconds float64, subject string)
+	IncPublishedEvents(ctx context.Context, subject, table string)
+	IncFilterSkippedEvents(ctx context.Context, table string)
+	IncProblematicEvents(ctx context.Context, kind string)
+	RecordProcessingDuration(ctx context.Context, seconds float64)
+	RecordPublishDuration(ctx context.Context, seconds float64, subject string)
+	RecordLSN(ctx context.Context, lsn int64)
 }
 
 // Listener main service struct.
@@ -69,7 +70,6 @@ type Listener struct {
 	repository repository
 	parser     parser
 	lsn        pglogrepl.LSN
-	serverLSN  pglogrepl.LSN
 	isAlive    atomic.Bool
 }
 
@@ -126,7 +126,7 @@ func (l *Listener) InitHandlers(ctx context.Context) {
 	}
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil {
 			l.log.Error("error starting http listener", "err", err)
 		}
 	}()
@@ -222,7 +222,7 @@ func (l *Listener) Process(ctx context.Context) error {
 			return fmt.Errorf("parse lsn: %w", err)
 		}
 
-		l.setLSN(lsn)
+		l.setLSN(ctx, lsn)
 
 		logger.Info("new slot was created", slog.String("slot", l.cfg.Listener.SlotName))
 	} else {
@@ -298,7 +298,7 @@ func (l *Listener) slotIsExists(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("parse lsn: %w", err)
 	}
 
-	l.setLSN(lsn)
+	l.setLSN(ctx, lsn)
 
 	return true, nil
 }
@@ -379,8 +379,8 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 		l.log.Debug("WAL message has been received", slog.String("wal", xld.WALStart.String()))
 
 		if err := l.parser.ParseWalMessage(xld.WALData, txWAL); err != nil {
-			l.monitor.IncProblematicEvents(problemKindParse)
-			l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
+			l.monitor.IncProblematicEvents(ctx, problemKindParse)
+			l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 			return fmt.Errorf("parse: %w", err)
 		}
 
@@ -390,13 +390,13 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 
 				publishStart := time.Now()
 				if err := l.publisher.Publish(ctx, subjectName, event); err != nil {
-					l.monitor.IncProblematicEvents(problemKindPublish)
-					l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
+					l.monitor.IncProblematicEvents(ctx, problemKindPublish)
+					l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 					return fmt.Errorf("publish: %w", err)
 				}
-				l.monitor.RecordPublishDuration(time.Since(publishStart).Seconds(), subjectName)
+				l.monitor.RecordPublishDuration(ctx, time.Since(publishStart).Seconds(), subjectName)
 
-				l.monitor.IncPublishedEvents(subjectName, event.Table)
+				l.monitor.IncPublishedEvents(ctx, subjectName, event.Table)
 
 				l.log.Info(
 					"event was sent",
@@ -414,15 +414,15 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 
 		if xld.WALStart > l.readLSN() {
 			if err := l.AckWalMessage(ctx, xld.WALStart); err != nil {
-				l.monitor.IncProblematicEvents(problemKindAck)
-				l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
+				l.monitor.IncProblematicEvents(ctx, problemKindAck)
+				l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 				return fmt.Errorf("ack: %w", err)
 			}
 
 			l.log.Debug("ack WAL message", slog.String("lsn", l.readLSN().String()))
 		}
 
-		l.monitor.RecordProcessingDuration(time.Since(start).Seconds())
+		l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 
 	case pglogrepl.PrimaryKeepaliveMessageByteID:
 		pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(rawMsg[1:])
@@ -436,10 +436,8 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 			slog.Time("server_time", pkm.ServerTime),
 		)
 
-		l.setServerLSN(pkm.ServerWALEnd)
-
 		if pkm.ServerWALEnd > l.readLSN() {
-			l.setLSN(pkm.ServerWALEnd)
+			l.setLSN(ctx, pkm.ServerWALEnd)
 		}
 
 		if pkm.ReplyRequested {
@@ -514,7 +512,7 @@ func (l *Listener) SendStandbyStatus(ctx context.Context) error {
 
 // AckWalMessage acknowledge received wal message.
 func (l *Listener) AckWalMessage(ctx context.Context, lsn pglogrepl.LSN) error {
-	l.setLSN(lsn)
+	l.setLSN(ctx, lsn)
 
 	if err := l.SendStandbyStatus(ctx); err != nil {
 		return fmt.Errorf("send status: %w", err)
@@ -530,30 +528,10 @@ func (l *Listener) readLSN() pglogrepl.LSN {
 	return l.lsn
 }
 
-func (l *Listener) setLSN(lsn pglogrepl.LSN) {
+func (l *Listener) setLSN(ctx context.Context, lsn pglogrepl.LSN) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	defer l.monitor.RecordLSN(ctx, int64(l.lsn))
 
 	l.lsn = lsn
-}
-
-func (l *Listener) setServerLSN(lsn pglogrepl.LSN) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	l.serverLSN = lsn
-}
-
-func (l *Listener) ReadLSN() pglogrepl.LSN {
-	return l.readLSN()
-}
-
-func (l *Listener) ReadServerLSN() pglogrepl.LSN {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.serverLSN
-}
-
-func (l *Listener) IsServiceAlive() bool {
-	return l.isAlive.Load()
 }

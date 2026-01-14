@@ -46,10 +46,6 @@ func InitSlog(cfg *Logger, version string, hook bool) *slog.Logger {
 		handler = slog.NewTextHandler(os.Stdout, &opt)
 	}
 
-	if hook {
-		// TODO: add OTEL hook
-	}
-
 	logger := slog.New(handler).With("version", version)
 
 	return logger

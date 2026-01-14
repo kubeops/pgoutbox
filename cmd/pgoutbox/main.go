@@ -134,13 +134,6 @@ func main() {
 				metrics,
 			)
 
-			if err := metrics.RegisterCallbacks(apis.GaugeCallbacks{
-				GetCurrentLSN: func() uint64 { return uint64(svc.ReadLSN()) },
-				GetServerLSN:  func() uint64 { return uint64(svc.ReadServerLSN()) },
-			}); err != nil {
-				return fmt.Errorf("register metrics callbacks: %w", err)
-			}
-
 			go svc.InitHandlers(ctx)
 
 			if err = svc.Process(ctx); err != nil {

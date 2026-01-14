@@ -29,12 +29,6 @@ import (
 
 var meterProvider *metric.MeterProvider
 
-// Config holds the telemetry configuration.
-type Config struct {
-	// PrometheusEnabled enables the Prometheus metrics endpoint.
-	PrometheusEnabled bool `json:"prometheusEnabled" mapstructure:"prometheusEnabled"`
-}
-
 // Init initializes the OpenTelemetry meter provider with Prometheus exporter.
 // It should be called once at application startup.
 func InitMetrics(ctx context.Context, version string) error {

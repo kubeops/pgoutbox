@@ -19,10 +19,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-var (
-	errSimple = errors.New("some err")
-	epochNano = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano()
-)
+var errSimple = errors.New("some err")
 
 func TestListener_slotIsExists(t *testing.T) {
 	type fields struct {
@@ -186,10 +183,6 @@ func TestListener_Stop(t *testing.T) {
 			publ.AssertExpectations(t)
 		})
 	}
-}
-
-func nowInNano() uint64 {
-	return uint64(time.Now().UnixNano()-epochNano) / uint64(1000)
 }
 
 func TestListener_SendStandbyStatus(t *testing.T) {
@@ -545,7 +538,8 @@ func TestListener_Stream(t *testing.T) {
 
 			tt.setup()
 
-			ctx, _ := context.WithTimeout(context.Background(), tt.args.timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), tt.args.timeout)
+			defer cancel()
 
 			w := &Listener{
 				log:        logger,
@@ -647,7 +641,9 @@ func TestListener_Process(t *testing.T) {
 				},
 			},
 			setup: func() {
-				ctx, _ = context.WithTimeout(ctx, time.Millisecond*200)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*200)
+				defer cancel()
 
 				setIsReplicationActive("slot1", false, nil)
 
@@ -683,7 +679,9 @@ func TestListener_Process(t *testing.T) {
 				},
 			},
 			setup: func() {
-				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
+				defer cancel()
 				setCreatePublication("pgoutbox", errors.New("some err"))
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
@@ -716,7 +714,9 @@ func TestListener_Process(t *testing.T) {
 				},
 			},
 			setup: func() {
-				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
+				defer cancel()
 				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "100/200", errors.New("some err"))
 			},
@@ -737,7 +737,9 @@ func TestListener_Process(t *testing.T) {
 				},
 			},
 			setup: func() {
-				ctx, _ = context.WithTimeout(ctx, time.Millisecond*20)
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
+				defer cancel()
 				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "", nil)
 				setCreateReplicationSlot(
