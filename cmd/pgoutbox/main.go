@@ -30,6 +30,7 @@ import (
 	"kubeops.dev/pgoutbox/internal/telemetry"
 
 	"github.com/urfave/cli/v2"
+	"kubeops.dev/pgoutbox/internal/telemetry/metrics"
 	"kubeops.dev/pgoutbox/internal/util"
 )
 
@@ -110,7 +111,7 @@ func main() {
 				}
 			}()
 
-			metrics, err := apis.NewMetrics()
+			metrics, err := metrics.New()
 			if err != nil {
 				return fmt.Errorf("initialize metrics: %w", err)
 			}
