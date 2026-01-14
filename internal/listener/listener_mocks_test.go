@@ -19,6 +19,10 @@ func (m *monitorMock) IncFilterSkippedEvents(table string) {}
 
 func (m *monitorMock) IncProblematicEvents(kind string) {}
 
+func (m *monitorMock) RecordProcessingDuration(seconds float64) {}
+
+func (m *monitorMock) RecordPublishDuration(seconds float64, subject string) {}
+
 type parserMock struct {
 	mock.Mock
 }
