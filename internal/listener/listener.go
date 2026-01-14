@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"kubeops.dev/pgoutbox/apis"
@@ -137,6 +138,16 @@ func (l *Listener) InitHandlers(ctx context.Context) {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	// ref: https://github.com/appscode-cloud/cloud-be/blob/79fd250eeb79d47abdd2d38525a0b9b21e1920cf/common/util/signal.go
+	shutdownHandler := make(chan os.Signal, 2)
+	signal.Notify(shutdownHandler, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-shutdownHandler
+		cancel()
+		<-shutdownHandler
+		os.Exit(1) // force exit upon receiving second signal
+	}()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		l.log.Error("http server shutdown error", "err", err)
@@ -354,9 +365,12 @@ func (l *Listener) Stream(ctx context.Context) error {
 			continue
 		}
 
+		start := time.Now()
 		if err = l.processRawMessage(ctx, rawMsg, txWAL); err != nil {
+			l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 			return fmt.Errorf("process message: %w", err)
 		}
+		l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 	}
 }
 
@@ -370,7 +384,6 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 
 	switch msgType {
 	case pglogrepl.XLogDataByteID:
-		start := time.Now()
 		xld, err := pglogrepl.ParseXLogData(rawMsg[1:])
 		if err != nil {
 			return fmt.Errorf("parse xlog data: %w", err)
@@ -380,7 +393,6 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 
 		if err := l.parser.ParseWalMessage(xld.WALData, txWAL); err != nil {
 			l.monitor.IncProblematicEvents(ctx, problemKindParse)
-			l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 			return fmt.Errorf("parse: %w", err)
 		}
 
@@ -391,7 +403,6 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 				publishStart := time.Now()
 				if err := l.publisher.Publish(ctx, subjectName, event); err != nil {
 					l.monitor.IncProblematicEvents(ctx, problemKindPublish)
-					l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 					return fmt.Errorf("publish: %w", err)
 				}
 				l.monitor.RecordPublishDuration(ctx, time.Since(publishStart).Seconds(), subjectName)
@@ -415,14 +426,11 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 		if xld.WALStart > l.readLSN() {
 			if err := l.AckWalMessage(ctx, xld.WALStart); err != nil {
 				l.monitor.IncProblematicEvents(ctx, problemKindAck)
-				l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 				return fmt.Errorf("ack: %w", err)
 			}
 
 			l.log.Debug("ack WAL message", slog.String("lsn", l.readLSN().String()))
 		}
-
-		l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 
 	case pglogrepl.PrimaryKeepaliveMessageByteID:
 		pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(rawMsg[1:])

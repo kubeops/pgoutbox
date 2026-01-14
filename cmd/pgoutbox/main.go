@@ -92,8 +92,19 @@ func main() {
 					return fmt.Errorf("initialize telemetry: %w", err)
 				}
 				defer func() {
-					shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer shutdownCancel()
+					shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					// ref: https://github.com/appscode-cloud/cloud-be/blob/79fd250eeb79d47abdd2d38525a0b9b21e1920cf/common/util/signal.go
+					shutdownHandler := make(chan os.Signal, 2)
+					signal.Notify(shutdownHandler, os.Interrupt, syscall.SIGTERM)
+					go func() {
+						<-shutdownHandler
+						cancel()
+						<-shutdownHandler
+						os.Exit(1) // force exit upon receiving second signal
+					}()
+
 					if err := telemetry.Shutdown(shutdownCtx); err != nil {
 						slog.Error("telemetry shutdown failed", "err", err)
 					}
