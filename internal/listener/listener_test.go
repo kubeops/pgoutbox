@@ -539,7 +539,7 @@ func TestListener_Stream(t *testing.T) {
 			tt.setup()
 
 			ctx, cancel := context.WithTimeout(context.Background(), tt.args.timeout)
-			defer cancel()
+			_ = cancel
 
 			w := &Listener{
 				log:        logger,
@@ -643,7 +643,7 @@ func TestListener_Process(t *testing.T) {
 			setup: func() {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*200)
-				defer cancel()
+				_ = cancel
 
 				setIsReplicationActive("slot1", false, nil)
 
@@ -681,7 +681,8 @@ func TestListener_Process(t *testing.T) {
 			setup: func() {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
-				defer cancel()
+				_ = cancel
+
 				setCreatePublication("pgoutbox", errors.New("some err"))
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
@@ -716,7 +717,8 @@ func TestListener_Process(t *testing.T) {
 			setup: func() {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
-				defer cancel()
+				_ = cancel
+
 				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "100/200", errors.New("some err"))
 			},
@@ -739,7 +741,8 @@ func TestListener_Process(t *testing.T) {
 			setup: func() {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
-				defer cancel()
+				_ = cancel
+
 				setCreatePublication("pgoutbox", nil)
 				setGetSlotLSN("slot1", "", nil)
 				setCreateReplicationSlot(

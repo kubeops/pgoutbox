@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"kubeops.dev/pgoutbox/apis"
@@ -20,6 +19,7 @@ import (
 	"github.com/jackc/pglogrepl"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
+	"kubeops.dev/pgoutbox/internal/telemetry"
 )
 
 // Logical decoding plugin.
@@ -136,21 +136,15 @@ func (l *Listener) InitHandlers(ctx context.Context) {
 
 	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	// ref: https://github.com/appscode-cloud/cloud-be/blob/79fd250eeb79d47abdd2d38525a0b9b21e1920cf/common/util/signal.go
-	shutdownHandler := make(chan os.Signal, 2)
-	signal.Notify(shutdownHandler, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-shutdownHandler
-		cancel()
-		<-shutdownHandler
-		os.Exit(1) // force exit upon receiving second signal
-	}()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		l.log.Error("http server shutdown error", "err", err)
+	}
+
+	if err := telemetry.Shutdown(shutdownCtx); err != nil {
+		l.log.Error("telemetry shutdown error", "err", err)
 	}
 }
 
@@ -367,7 +361,6 @@ func (l *Listener) Stream(ctx context.Context) error {
 
 		start := time.Now()
 		if err = l.processRawMessage(ctx, rawMsg, txWAL); err != nil {
-			l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
 			return fmt.Errorf("process message: %w", err)
 		}
 		l.monitor.RecordProcessingDuration(ctx, time.Since(start).Seconds())
@@ -406,7 +399,6 @@ func (l *Listener) processRawMessage(ctx context.Context, rawMsg []byte, txWAL *
 					return fmt.Errorf("publish: %w", err)
 				}
 				l.monitor.RecordPublishDuration(ctx, time.Since(publishStart).Seconds(), subjectName)
-
 				l.monitor.IncPublishedEvents(ctx, subjectName, event.Table)
 
 				l.log.Info(
@@ -539,7 +531,7 @@ func (l *Listener) readLSN() pglogrepl.LSN {
 func (l *Listener) setLSN(ctx context.Context, lsn pglogrepl.LSN) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	defer l.monitor.RecordLSN(ctx, int64(l.lsn))
 
 	l.lsn = lsn
+	l.monitor.RecordLSN(ctx, int64(l.lsn))
 }

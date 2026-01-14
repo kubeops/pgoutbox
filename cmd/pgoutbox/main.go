@@ -17,14 +17,11 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"runtime/debug"
-	"syscall"
 	"time"
 
 	"kubeops.dev/pgoutbox/apis"
@@ -33,6 +30,7 @@ import (
 	"kubeops.dev/pgoutbox/internal/telemetry"
 
 	"github.com/urfave/cli/v2"
+	"kubeops.dev/pgoutbox/internal/util"
 )
 
 // GetVersion returns latest git hash of commit.
@@ -73,7 +71,7 @@ func main() {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			ctx, cancel := signal.NotifyContext(c.Context, syscall.SIGINT, syscall.SIGTERM)
+			ctx, cancel := util.SetupSignalContext()
 			defer cancel()
 
 			cfg, err := apis.InitConfig(c.String("config"))
@@ -91,24 +89,6 @@ func main() {
 				if err = telemetry.InitMetrics(ctx, version); err != nil {
 					return fmt.Errorf("initialize telemetry: %w", err)
 				}
-				defer func() {
-					shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					// ref: https://github.com/appscode-cloud/cloud-be/blob/79fd250eeb79d47abdd2d38525a0b9b21e1920cf/common/util/signal.go
-					shutdownHandler := make(chan os.Signal, 2)
-					signal.Notify(shutdownHandler, os.Interrupt, syscall.SIGTERM)
-					go func() {
-						<-shutdownHandler
-						cancel()
-						<-shutdownHandler
-						os.Exit(1) // force exit upon receiving second signal
-					}()
-
-					if err := telemetry.Shutdown(shutdownCtx); err != nil {
-						slog.Error("telemetry shutdown failed", "err", err)
-					}
-				}()
 			}
 
 			pgxConn, pgConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
