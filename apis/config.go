@@ -29,9 +29,9 @@ type Config struct {
 
 // TelemetryCfg holds telemetry and metrics configuration.
 type TelemetryCfg struct {
-	// PrometheusEnabled enables the Prometheus metrics endpoint at /metrics.
+	// Enabled enables the Prometheus metrics endpoint at /metrics.
 	// Defaults to true if not specified.
-	PrometheusEnabled bool `json:"prometheusEnabled" mapstructure:"prometheusEnabled"`
+	Enabled bool `json:"enabled" mapstructure:"enabled"`
 }
 
 // ListenerCfg path of the listener config.

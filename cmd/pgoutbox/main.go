@@ -87,7 +87,7 @@ func main() {
 
 			logger := apis.InitSlog(cfg.Logger, version, false)
 
-			if cfg.Telemetry == nil || cfg.Telemetry.PrometheusEnabled {
+			if cfg.Telemetry == nil || cfg.Telemetry.Enabled {
 				if err = telemetry.InitMetrics(ctx, version); err != nil {
 					return fmt.Errorf("initialize telemetry: %w", err)
 				}
@@ -124,14 +124,11 @@ func main() {
 				return fmt.Errorf("initialize metrics: %w", err)
 			}
 
-			repo := listener.NewRepository(pgxConn)
-			repl := newReplicationConn(pgConn)
-
 			svc := listener.NewWalListener(
 				cfg,
 				logger,
-				repo,
-				repl,
+				listener.NewRepository(pgxConn),
+				newReplicationConn(pgConn),
 				pub,
 				transaction.NewBinaryParser(logger, binary.BigEndian),
 				metrics,

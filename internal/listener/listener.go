@@ -113,7 +113,7 @@ func (l *Listener) InitHandlers(ctx context.Context) {
 	handler.HandleFunc("GET /healthz", l.liveness)
 	handler.HandleFunc("GET /ready", l.readiness)
 
-	if l.cfg.Telemetry == nil || l.cfg.Telemetry.PrometheusEnabled {
+	if l.cfg.Telemetry == nil || l.cfg.Telemetry.Enabled {
 		handler.Handle("GET /metrics", promhttp.Handler())
 	}
 
