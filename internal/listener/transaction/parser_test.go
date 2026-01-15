@@ -115,165 +115,180 @@ func timeToPgTime(t time.Time) int64 {
 	return t.Sub(pgEpoch).Microseconds()
 }
 
-func TestParser_ParseWalMessage_BeginMessage(t *testing.T) {
+func TestParser(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
 
-	finalLSN := pglogrepl.LSN(0x17843B8)
-	commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-	xid := uint32(12345)
-
-	msg := buildBeginMessage(finalLSN, commitTime, xid)
-
-	wal := NewWAL(logger, nil, &monitorMock{})
-	err := parser.ParseWalMessage(msg, wal)
-
-	assert.NoError(t, err)
-	assert.Equal(t, finalLSN, wal.LSN)
-	assert.NotNil(t, wal.BeginTime)
-	// Check time within a reasonable tolerance (microsecond precision)
-	assert.WithinDuration(t, commitTime, *wal.BeginTime, time.Microsecond)
-}
-
-func TestParser_ParseWalMessage_CommitMessage(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
-
-	commitLSN := pglogrepl.LSN(0x17843B8)
-	transactionEndLSN := pglogrepl.LSN(0x17843C0)
-	commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-
-	// First set up WAL with matching LSN from Begin
-	wal := NewWAL(logger, nil, &monitorMock{})
-	wal.LSN = commitLSN
-
-	msg := buildCommitMessage(0, commitLSN, transactionEndLSN, commitTime)
-	err := parser.ParseWalMessage(msg, wal)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, wal.CommitTime)
-	assert.WithinDuration(t, commitTime, *wal.CommitTime, time.Microsecond)
-}
-
-func TestParser_ParseWalMessage_CommitMessage_LSNMismatch(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
-
-	commitLSN := pglogrepl.LSN(0x17843B8)
-	differentLSN := pglogrepl.LSN(0x17843C0)
-	commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-
-	// Set up WAL with different LSN
-	wal := NewWAL(logger, nil, &monitorMock{})
-	wal.LSN = differentLSN
-
-	msg := buildCommitMessage(0, commitLSN, commitLSN, commitTime)
-	err := parser.ParseWalMessage(msg, wal)
-
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrMessageLost)
-}
-
-func TestParser_ParseWalMessage_RelationMessage(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
-
-	relationID := uint32(16385)
-	namespace := "public"
-	relationName := "users"
-	columns := []struct {
-		flags    uint8
-		name     string
-		dataType uint32
-		typeMod  int32
+	tests := []struct {
+		name      string
+		setupWAL  func() *WAL
+		buildMsg  func() []byte
+		assertion func(t *testing.T, wal *WAL, err error)
 	}{
-		{flags: 1, name: "id", dataType: 23, typeMod: -1},      // int4, key
-		{flags: 0, name: "name", dataType: 25, typeMod: -1},    // text
-		{flags: 0, name: "email", dataType: 1043, typeMod: -1}, // varchar
-	}
-
-	msg := buildRelationMessage(relationID, namespace, relationName, 1, columns)
-
-	wal := NewWAL(logger, nil, &monitorMock{})
-	wal.LSN = pglogrepl.LSN(0x17843B8) // Must have LSN set
-
-	err := parser.ParseWalMessage(msg, wal)
-
-	assert.NoError(t, err)
-	assert.Contains(t, wal.RelationStore, relationID)
-
-	rd := wal.RelationStore[relationID]
-	assert.Equal(t, namespace, rd.Schema)
-	assert.Equal(t, relationName, rd.Table)
-	assert.Len(t, rd.Columns, 3)
-	assert.Equal(t, "id", rd.Columns[0].name)
-	assert.True(t, rd.Columns[0].isKey)
-	assert.Equal(t, "name", rd.Columns[1].name)
-	assert.False(t, rd.Columns[1].isKey)
-}
-
-func TestParser_ParseWalMessage_RelationMessage_NoLSN(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
-
-	msg := buildRelationMessage(16385, "public", "users", 1, nil)
-
-	wal := NewWAL(logger, nil, &monitorMock{})
-	// LSN is 0
-
-	err := parser.ParseWalMessage(msg, wal)
-
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrMessageLost)
-}
-
-func TestParser_ParseWalMessage_InsertMessage(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
-
-	relationID := uint32(16385)
-	tupleData := [][]byte{
-		[]byte("1"),
-		[]byte("John Doe"),
-		[]byte("john@example.com"),
-	}
-
-	// First set up the relation in WAL
-	wal := NewWAL(logger, nil, &monitorMock{})
-	wal.LSN = pglogrepl.LSN(0x17843B8)
-	wal.RelationStore[relationID] = RelationData{
-		Schema: "public",
-		Table:  "users",
-		Columns: []Column{
-			InitColumn(logger, "id", nil, Int4OID, true),
-			InitColumn(logger, "name", nil, TextOID, false),
-			InitColumn(logger, "email", nil, VarcharOID, false),
+		{
+			name: "ParseWalMessage_BeginMessage",
+			setupWAL: func() *WAL {
+				return NewWAL(logger, nil, &monitorMock{})
+			},
+			buildMsg: func() []byte {
+				finalLSN := pglogrepl.LSN(0x17843B8)
+				commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+				xid := uint32(12345)
+				return buildBeginMessage(finalLSN, commitTime, xid)
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.NoError(t, err)
+				assert.Equal(t, pglogrepl.LSN(0x17843B8), wal.LSN)
+				assert.NotNil(t, wal.BeginTime)
+				assert.WithinDuration(t, time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), *wal.BeginTime, time.Microsecond)
+			},
+		},
+		{
+			name: "ParseWalMessage_CommitMessage",
+			setupWAL: func() *WAL {
+				wal := NewWAL(logger, nil, &monitorMock{})
+				wal.LSN = pglogrepl.LSN(0x17843B8)
+				return wal
+			},
+			buildMsg: func() []byte {
+				commitLSN := pglogrepl.LSN(0x17843B8)
+				transactionEndLSN := pglogrepl.LSN(0x17843C0)
+				commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+				return buildCommitMessage(0, commitLSN, transactionEndLSN, commitTime)
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.NoError(t, err)
+				assert.NotNil(t, wal.CommitTime)
+				assert.WithinDuration(t, time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), *wal.CommitTime, time.Microsecond)
+			},
+		},
+		{
+			name: "ParseWalMessage_CommitMessage_LSNMismatch",
+			setupWAL: func() *WAL {
+				wal := NewWAL(logger, nil, &monitorMock{})
+				wal.LSN = pglogrepl.LSN(0x17843C0)
+				return wal
+			},
+			buildMsg: func() []byte {
+				commitLSN := pglogrepl.LSN(0x17843B8)
+				commitTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+				return buildCommitMessage(0, commitLSN, commitLSN, commitTime)
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrMessageLost)
+			},
+		},
+		{
+			name: "ParseWalMessage_RelationMessage",
+			setupWAL: func() *WAL {
+				wal := NewWAL(logger, nil, &monitorMock{})
+				wal.LSN = pglogrepl.LSN(0x17843B8)
+				return wal
+			},
+			buildMsg: func() []byte {
+				relationID := uint32(16385)
+				namespace := "public"
+				relationName := "users"
+				columns := []struct {
+					flags    uint8
+					name     string
+					dataType uint32
+					typeMod  int32
+				}{
+					{flags: 1, name: "id", dataType: 23, typeMod: -1},      // int4, key
+					{flags: 0, name: "name", dataType: 25, typeMod: -1},    // text
+					{flags: 0, name: "email", dataType: 1043, typeMod: -1}, // varchar
+				}
+				return buildRelationMessage(relationID, namespace, relationName, 1, columns)
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.NoError(t, err)
+				relationID := uint32(16385)
+				assert.Contains(t, wal.RelationStore, relationID)
+				rd := wal.RelationStore[relationID]
+				assert.Equal(t, "public", rd.Schema)
+				assert.Equal(t, "users", rd.Table)
+				assert.Len(t, rd.Columns, 3)
+				assert.Equal(t, "id", rd.Columns[0].name)
+				assert.True(t, rd.Columns[0].isKey)
+				assert.Equal(t, "name", rd.Columns[1].name)
+				assert.False(t, rd.Columns[1].isKey)
+			},
+		},
+		{
+			name: "ParseWalMessage_RelationMessage_NoLSN",
+			setupWAL: func() *WAL {
+				return NewWAL(logger, nil, &monitorMock{})
+			},
+			buildMsg: func() []byte {
+				return buildRelationMessage(16385, "public", "users", 1, nil)
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrMessageLost)
+			},
+		},
+		{
+			name: "ParseWalMessage_InsertMessage",
+			setupWAL: func() *WAL {
+				wal := NewWAL(logger, nil, &monitorMock{})
+				wal.LSN = pglogrepl.LSN(0x17843B8)
+				relationID := uint32(16385)
+				wal.RelationStore[relationID] = RelationData{
+					Schema: "public",
+					Table:  "users",
+					Columns: []Column{
+						InitColumn(logger, "id", nil, Int4OID, true),
+						InitColumn(logger, "name", nil, TextOID, false),
+						InitColumn(logger, "email", nil, VarcharOID, false),
+					},
+				}
+				return wal
+			},
+			buildMsg: func() []byte {
+				relationID := uint32(16385)
+				tupleData := [][]byte{
+					[]byte("1"),
+					[]byte("John Doe"),
+					[]byte("john@example.com"),
+				}
+				return buildInsertMessage(relationID, tupleData)
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.NoError(t, err)
+				assert.Len(t, wal.Actions, 1)
+				action := wal.Actions[0]
+				assert.Equal(t, "public", action.Schema)
+				assert.Equal(t, "users", action.Table)
+				assert.Equal(t, ActionKindInsert, action.Kind)
+				assert.Len(t, action.NewColumns, 3)
+				assert.Equal(t, 1, action.NewColumns[0].value)
+				assert.Equal(t, "John Doe", action.NewColumns[1].value)
+				assert.Equal(t, "john@example.com", action.NewColumns[2].value)
+			},
+		},
+		{
+			name: "ParseWalMessage_EmptyMessage",
+			setupWAL: func() *WAL {
+				return NewWAL(logger, nil, &monitorMock{})
+			},
+			buildMsg: func() []byte {
+				return []byte{}
+			},
+			assertion: func(t *testing.T, wal *WAL, err error) {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrEmptyWALMessage)
+			},
 		},
 	}
 
-	msg := buildInsertMessage(relationID, tupleData)
-	err := parser.ParseWalMessage(msg, wal)
-
-	assert.NoError(t, err)
-	assert.Len(t, wal.Actions, 1)
-
-	action := wal.Actions[0]
-	assert.Equal(t, "public", action.Schema)
-	assert.Equal(t, "users", action.Table)
-	assert.Equal(t, ActionKindInsert, action.Kind)
-	assert.Len(t, action.NewColumns, 3)
-	assert.Equal(t, 1, action.NewColumns[0].value)
-	assert.Equal(t, "John Doe", action.NewColumns[1].value)
-	assert.Equal(t, "john@example.com", action.NewColumns[2].value)
-}
-
-func TestParser_ParseWalMessage_EmptyMessage(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	parser := NewParser(logger)
-
-	wal := NewWAL(logger, nil, &monitorMock{})
-	err := parser.ParseWalMessage([]byte{}, wal)
-
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrEmptyWALMessage)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := NewParser(logger)
+			wal := tt.setupWAL()
+			msg := tt.buildMsg()
+			err := parser.ParseWalMessage(msg, wal)
+			tt.assertion(t, wal, err)
+		})
+	}
 }

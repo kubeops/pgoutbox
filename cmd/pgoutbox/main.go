@@ -110,7 +110,7 @@ func main() {
 				}
 			}()
 
-			metrics, err := metrics.New()
+			metricsCollector, err := metrics.New()
 			if err != nil {
 				return fmt.Errorf("initialize metrics: %w", err)
 			}
@@ -122,7 +122,7 @@ func main() {
 				newReplicationConn(pgConn),
 				pub,
 				transaction.NewParser(logger),
-				metrics,
+				metricsCollector,
 			)
 
 			go svc.InitHandlers(ctx)
