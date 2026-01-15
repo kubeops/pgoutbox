@@ -27,6 +27,7 @@ func TestListener_slotIsExists(t *testing.T) {
 	}
 
 	repo := new(repositoryMock)
+	metrics := new(monitorMock)
 
 	setGetSlotLSN := func(slotName, lsn string, err error) {
 		repo.On("GetSlotLSN", mock.Anything, slotName).
@@ -97,6 +98,7 @@ func TestListener_slotIsExists(t *testing.T) {
 				cfg: &apis.Config{Listener: &apis.ListenerCfg{
 					SlotName: tt.fields.slotName,
 				}},
+				monitor:    metrics,
 				repository: repo,
 			}
 
@@ -263,6 +265,7 @@ func TestListener_AckWalMessage(t *testing.T) {
 	}
 
 	repl := new(replicatorMock)
+	metrics := new(monitorMock)
 
 	setSendStandbyStatusUpdate := func(lsn pglogrepl.LSN, err error) {
 		repl.On(
@@ -320,6 +323,7 @@ func TestListener_AckWalMessage(t *testing.T) {
 				log:        logger,
 				replicator: repl,
 				lsn:        tt.fields.restartLSN,
+				monitor:    metrics,
 			}
 			if err := w.AckWalMessage(context.Background(), tt.args.LSN); (err != nil) != tt.wantErr {
 				t.Errorf("AckWalMessage() error = %v, wantErr %v", err, tt.wantErr)
