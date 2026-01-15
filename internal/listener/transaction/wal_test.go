@@ -8,21 +8,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pglogrepl"
 	"github.com/magiconair/properties/assert"
 )
 
 func TestWalTransaction_CreateActionData(t *testing.T) {
 	type fields struct {
-		LSN           int64
+		LSN           pglogrepl.LSN
 		BeginTime     *time.Time
 		CommitTime    *time.Time
-		RelationStore map[int32]RelationData
+		RelationStore map[uint32]RelationData
 		Actions       []ActionData
 	}
 	type args struct {
-		relationID int32
-		oldRows    []TupleData
-		newRows    []TupleData
+		relationID uint32
+		oldTuple   *pglogrepl.TupleData
+		newTuple   *pglogrepl.TupleData
 		kind       ActionKind
 	}
 
@@ -39,10 +40,10 @@ func TestWalTransaction_CreateActionData(t *testing.T) {
 		{
 			name: "success",
 			fields: fields{
-				LSN:        10,
+				LSN:        pglogrepl.LSN(10),
 				BeginTime:  &now,
 				CommitTime: &now,
-				RelationStore: map[int32]RelationData{
+				RelationStore: map[uint32]RelationData{
 					10: {
 						Schema: "public",
 						Table:  "users",
@@ -61,14 +62,14 @@ func TestWalTransaction_CreateActionData(t *testing.T) {
 			},
 			args: args{
 				relationID: 10,
-				oldRows: []TupleData{
-					{
-						Value: []byte{56, 48},
+				oldTuple: &pglogrepl.TupleData{
+					Columns: []*pglogrepl.TupleDataColumn{
+						{DataType: 't', Data: []byte{56, 48}},
 					},
 				},
-				newRows: []TupleData{
-					{
-						Value: []byte{49, 49},
+				newTuple: &pglogrepl.TupleData{
+					Columns: []*pglogrepl.TupleDataColumn{
+						{DataType: 't', Data: []byte{49, 49}},
 					},
 				},
 				kind: ActionKindUpdate,
@@ -101,10 +102,10 @@ func TestWalTransaction_CreateActionData(t *testing.T) {
 		{
 			name: "relation not exists",
 			fields: fields{
-				LSN:        10,
+				LSN:        pglogrepl.LSN(10),
 				BeginTime:  &now,
 				CommitTime: &now,
-				RelationStore: map[int32]RelationData{
+				RelationStore: map[uint32]RelationData{
 					11: {
 						Schema: "public",
 						Table:  "users",
@@ -123,8 +124,8 @@ func TestWalTransaction_CreateActionData(t *testing.T) {
 			},
 			args: args{
 				relationID: 10,
-				oldRows:    nil,
-				newRows:    nil,
+				oldTuple:   nil,
+				newTuple:   nil,
 				kind:       ActionKindUpdate,
 			},
 			wantA:   ActionData{},
@@ -143,7 +144,7 @@ func TestWalTransaction_CreateActionData(t *testing.T) {
 				Actions:       tt.fields.Actions,
 			}
 
-			gotA, err := w.CreateActionData(tt.args.relationID, tt.args.oldRows, tt.args.newRows, tt.args.kind)
+			gotA, err := w.CreateActionData(tt.args.relationID, tt.args.oldTuple, tt.args.newTuple, tt.args.kind)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateActionData() error = %v, wantErr %v", err, tt.wantErr)
 				return

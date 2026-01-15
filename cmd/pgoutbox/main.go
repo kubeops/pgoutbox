@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
@@ -111,7 +110,7 @@ func main() {
 				}
 			}()
 
-			metrics, err := metrics.New()
+			metricsCollector, err := metrics.New()
 			if err != nil {
 				return fmt.Errorf("initialize metrics: %w", err)
 			}
@@ -122,8 +121,8 @@ func main() {
 				listener.NewRepository(pgxConn),
 				newReplicationConn(pgConn),
 				pub,
-				transaction.NewBinaryParser(logger, binary.BigEndian),
-				metrics,
+				transaction.NewParser(logger),
+				metricsCollector,
 			)
 
 			go svc.InitHandlers(ctx)

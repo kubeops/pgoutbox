@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asaskevich/govalidator"
+	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
 )
 
@@ -20,10 +20,10 @@ const (
 
 // Config for pgoutbox.
 type Config struct {
-	Listener  *ListenerCfg  `valid:"required" json:"listener" mapstructure:"listener"`
-	Database  *DatabaseCfg  `valid:"required" json:"database" mapstructure:"database"`
-	Publisher *PublisherCfg `valid:"required" json:"publisher" mapstructure:"publisher"`
-	Logger    *Logger       `valid:"required" json:"logger" mapstructure:"logger"`
+	Listener  *ListenerCfg  `validate:"required" json:"listener" mapstructure:"listener"`
+	Database  *DatabaseCfg  `validate:"required" json:"database" mapstructure:"database"`
+	Publisher *PublisherCfg `validate:"required" json:"publisher" mapstructure:"publisher"`
+	Logger    *Logger       `validate:"required" json:"logger" mapstructure:"logger"`
 	Telemetry *TelemetryCfg `json:"telemetry" mapstructure:"telemetry"`
 }
 
@@ -36,36 +36,36 @@ type TelemetryCfg struct {
 
 // ListenerCfg path of the listener config.
 type ListenerCfg struct {
-	SlotName          string            `valid:"required" json:"slotName" mapstructure:"slotName"`
+	SlotName          string            `validate:"required" json:"slotName" mapstructure:"slotName"`
 	ServerPort        int               `json:"serverPort" mapstructure:"serverPort"`
 	AckTimeout        time.Duration     `json:"ackTimeout" mapstructure:"ackTimeout"`
-	RefreshConnection time.Duration     `json:"refreshConnection" valid:"required" mapstructure:"refreshConnection"`
-	HeartbeatInterval time.Duration     `json:"heartbeatInterval" valid:"required" mapstructure:"heartbeatInterval"`
+	RefreshConnection time.Duration     `validate:"required" json:"refreshConnection" mapstructure:"refreshConnection"`
+	HeartbeatInterval time.Duration     `validate:"required" json:"heartbeatInterval" mapstructure:"heartbeatInterval"`
 	Filter            FilterStruct      `json:"filter" mapstructure:"filter"`
 	TopicsMap         map[string]string `json:"topicsMap" mapstructure:"topicsMap"`
 }
 
 // PublisherCfg represent configuration for any publisher types.
 type PublisherCfg struct {
-	Type            PublisherType `valid:"required" json:"type" mapstructure:"type"`
-	Address         string        `valid:"required" json:"address" mapstructure:"address"`
-	NatsCredPath    string        `valid:"required" json:"natsCredPath" mapstructure:"natsCredPath"`
-	Topic           string        `valid:"required" json:"topic" mapstructure:"topic"`
+	Type            PublisherType `validate:"required,oneof=nats kafka rabbitmq google_pubsub" json:"type" mapstructure:"type"`
+	Address         string        `validate:"required" json:"address" mapstructure:"address"`
+	NatsCredPath    string        `validate:"required_if=Type nats" json:"natsCredPath" mapstructure:"natsCredPath"`
+	Topic           string        `validate:"required" json:"topic" mapstructure:"topic"`
 	TopicPrefix     string        `json:"topicPrefix" mapstructure:"topicPrefix"`
 	EnableTLS       bool          `json:"enableTLS" mapstructure:"enableTlS"`
-	ClientCert      string        `json:"clientCert" mapstructure:"clientCert"`
-	ClientKey       string        `json:"clientKey" mapstructure:"clientKey"`
-	CACert          string        `json:"CACert" mapstructure:"caCert"`
-	PubSubProjectID string        `json:"pubSubProjectID" mapstructure:"pubSubProductId"`
+	ClientCert      string        `validate:"required_if=EnableTLS true" json:"clientCert" mapstructure:"clientCert"`
+	ClientKey       string        `validate:"required_if=EnableTLS true" json:"clientKey" mapstructure:"clientKey"`
+	CACert          string        `validate:"required_if=EnableTLS true" json:"CACert" mapstructure:"caCert"`
+	PubSubProjectID string        `validate:"required_if=Type google_pubsub" json:"pubSubProjectID" mapstructure:"pubSubProductId"`
 }
 
 // DatabaseCfg path of the PostgreSQL DB config.
 type DatabaseCfg struct {
-	Host     string `valid:"required" json:"host" mapstructure:"host"`
-	Port     uint16 `valid:"required" json:"port" mapstructure:"port"`
-	Name     string `valid:"required" json:"name" mapstructure:"name"`
-	User     string `valid:"required" json:"user" mapstructure:"user"`
-	Password string `valid:"required" json:"password" mapstructure:"password"`
+	Host     string `validate:"required" json:"host" mapstructure:"host"`
+	Port     uint16 `validate:"required" json:"port" mapstructure:"port"`
+	Name     string `validate:"required" json:"name" mapstructure:"name"`
+	User     string `validate:"required" json:"user" mapstructure:"user"`
+	Password string `validate:"required" json:"password" mapstructure:"password"`
 	Debug    bool   `json:"debug" mapstructure:"debug"`
 }
 
@@ -74,10 +74,11 @@ type FilterStruct struct {
 	Tables map[string][]string `json:"tables" yaml:"tables" mapstructure:"tables"`
 }
 
+var validate = validator.New()
+
 // Validate config data.
 func (c Config) Validate() error {
-	_, err := govalidator.ValidateStruct(c)
-	return err
+	return validate.Struct(c)
 }
 
 // InitConfig load config from file.
