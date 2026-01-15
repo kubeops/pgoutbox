@@ -24,6 +24,14 @@ type Config struct {
 	Database  *DatabaseCfg  `valid:"required" json:"database" mapstructure:"database"`
 	Publisher *PublisherCfg `valid:"required" json:"publisher" mapstructure:"publisher"`
 	Logger    *Logger       `valid:"required" json:"logger" mapstructure:"logger"`
+	Telemetry *TelemetryCfg `json:"telemetry" mapstructure:"telemetry"`
+}
+
+// TelemetryCfg holds telemetry and metrics configuration.
+type TelemetryCfg struct {
+	// Enabled enables the Prometheus metrics endpoint at /metrics.
+	// Defaults to true if not specified.
+	Enabled bool `json:"enabled" mapstructure:"enabled"`
 }
 
 // ListenerCfg path of the listener config.

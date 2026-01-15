@@ -14,7 +14,7 @@ import (
 )
 
 type monitor interface {
-	IncFilterSkippedEvents(table string)
+	IncFilterSkippedEvents(ctx context.Context, table string)
 }
 
 // WAL transaction specified WAL message.
@@ -155,7 +155,7 @@ func (w *WAL) CreateEventsWithFilter(ctx context.Context, tableMap map[string][]
 				continue
 			}
 
-			w.monitor.IncFilterSkippedEvents(item.Table)
+			w.monitor.IncFilterSkippedEvents(ctx, item.Table)
 
 			w.log.Debug(
 				"wal-message was skipped by filter",

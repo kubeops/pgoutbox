@@ -21,16 +21,17 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"runtime/debug"
-	"syscall"
 	"time"
 
 	"kubeops.dev/pgoutbox/apis"
 	"kubeops.dev/pgoutbox/internal/listener"
 	"kubeops.dev/pgoutbox/internal/listener/transaction"
+	"kubeops.dev/pgoutbox/internal/telemetry"
 
 	"github.com/urfave/cli/v2"
+	"kubeops.dev/pgoutbox/internal/telemetry/metrics"
+	"kubeops.dev/pgoutbox/internal/util"
 )
 
 // GetVersion returns latest git hash of commit.
@@ -71,7 +72,7 @@ func main() {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			ctx, cancel := signal.NotifyContext(c.Context, syscall.SIGINT, syscall.SIGTERM)
+			ctx, cancel := util.SetupSignalContext()
 			defer cancel()
 
 			cfg, err := apis.InitConfig(c.String("config"))
@@ -84,6 +85,12 @@ func main() {
 			}
 
 			logger := apis.InitSlog(cfg.Logger, version, false)
+
+			if cfg.Telemetry == nil || cfg.Telemetry.Enabled {
+				if err = telemetry.InitMetrics(ctx, version); err != nil {
+					return fmt.Errorf("initialize telemetry: %w", err)
+				}
+			}
 
 			pgxConn, pgConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
 			if err != nil {
@@ -104,6 +111,11 @@ func main() {
 				}
 			}()
 
+			metrics, err := metrics.New()
+			if err != nil {
+				return fmt.Errorf("initialize metrics: %w", err)
+			}
+
 			svc := listener.NewWalListener(
 				cfg,
 				logger,
@@ -111,7 +123,7 @@ func main() {
 				newReplicationConn(pgConn),
 				pub,
 				transaction.NewBinaryParser(logger, binary.BigEndian),
-				apis.NewMetrics(),
+				metrics,
 			)
 
 			go svc.InitHandlers(ctx)
