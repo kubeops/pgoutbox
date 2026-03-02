@@ -134,7 +134,6 @@ func main() {
 			return nil
 		},
 	}
-
 	if err := app.Run(os.Args); err != nil {
 		slog.Error("service error", "err", err)
 	}
