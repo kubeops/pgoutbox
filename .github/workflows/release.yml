@@ -68,6 +68,13 @@ jobs:
           username: ${{ steps.app-token.outputs.app-slug }}[bot]
           password: ${{ steps.app-token.outputs.token }}
 
+      - name: Log in to the GitHub Container registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: 1gtm
+          password: ${{ secrets.LGTM_GITHUB_TOKEN }}
+
       - name: Publish to GitHub Container Registry
         env:
           REGISTRY: ghcr.io/appscode
