@@ -158,7 +158,7 @@ func (l *Listener) liveness(w http.ResponseWriter, _ *http.Request) {
 
 	w.Header().Set("Content-Type", contentTypeTextPlain)
 
-	if !l.replicator.IsAlive() || !l.repository.IsAlive() {
+	if !l.replicator.IsAlive() || !l.repository.IsAlive() || !l.isAlive.Load() {
 		resp = []byte("failed")
 		respCode = http.StatusInternalServerError
 
