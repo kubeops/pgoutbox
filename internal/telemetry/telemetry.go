@@ -16,7 +16,8 @@ var meterProvider *metric.MeterProvider
 // Init initializes the OpenTelemetry meter provider with Prometheus exporter.
 // It should be called once at application startup.
 func InitMetrics(ctx context.Context, version string) error {
-	res, err := resource.New(ctx,
+	res, err := resource.New(
+		ctx,
 		resource.WithAttributes(
 			semconv.ServiceVersion(version),
 		),

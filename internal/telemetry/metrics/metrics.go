@@ -103,7 +103,8 @@ func (m *Metrics) IncPublishedEvents(ctx context.Context, subject, table string)
 	if m == nil || m.eventsPublished == nil {
 		return
 	}
-	m.eventsPublished.Add(ctx, 1,
+	m.eventsPublished.Add(
+		ctx, 1,
 		metric.WithAttributes(
 			attribute.String(attrKeySubject, subject),
 			attribute.String(attrKeyTable, table),
@@ -115,7 +116,8 @@ func (m *Metrics) IncFilterSkippedEvents(ctx context.Context, table string) {
 	if m == nil || m.eventsFiltered == nil {
 		return
 	}
-	m.eventsFiltered.Add(ctx, 1,
+	m.eventsFiltered.Add(
+		ctx, 1,
 		metric.WithAttributes(attribute.String(attrKeyTable, table)),
 	)
 }
@@ -124,7 +126,8 @@ func (m *Metrics) IncProblematicEvents(ctx context.Context, kind string) {
 	if m == nil || m.eventsFailed == nil {
 		return
 	}
-	m.eventsFailed.Add(ctx, 1,
+	m.eventsFailed.Add(
+		ctx, 1,
 		metric.WithAttributes(attribute.String(attrKeyKind, kind)),
 	)
 }
@@ -140,7 +143,8 @@ func (m *Metrics) RecordPublishDuration(ctx context.Context, seconds float64, su
 	if m == nil || m.publishDuration == nil {
 		return
 	}
-	m.publishDuration.Record(ctx, seconds,
+	m.publishDuration.Record(
+		ctx, seconds,
 		metric.WithAttributes(attribute.String(attrKeySubject, subject)),
 	)
 }
