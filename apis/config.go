@@ -37,6 +37,7 @@ type TelemetryCfg struct {
 // ListenerCfg path of the listener config.
 type ListenerCfg struct {
 	SlotName          string            `validate:"required" json:"slotName" mapstructure:"slotName"`
+	Failover          bool              `json:"failover" mapstructure:"failover"`
 	ServerPort        int               `json:"serverPort" mapstructure:"serverPort"`
 	AckTimeout        time.Duration     `json:"ackTimeout" mapstructure:"ackTimeout"`
 	RefreshConnection time.Duration     `validate:"required" json:"refreshConnection" mapstructure:"refreshConnection"`

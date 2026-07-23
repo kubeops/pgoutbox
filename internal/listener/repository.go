@@ -41,6 +41,27 @@ func (r RepositoryImpl) CreatePublication(ctx context.Context, name string) erro
 	return nil
 }
 
+// CreateFailoverSlot creates a logical replication slot with the failover
+// property enabled so PostgreSQL can synchronize it to hot standbys (requires
+// PostgreSQL 17+). It returns the consistent point LSN of the new slot.
+//
+// The slot is created through the SQL function rather than the replication
+// protocol because the CREATE_REPLICATION_SLOT command exposed by pglogrepl
+// cannot express the FAILOVER option.
+func (r RepositoryImpl) CreateFailoverSlot(ctx context.Context, slotName string) (string, error) {
+	var lsn string
+
+	// args: slot_name, plugin, temporary=false, twophase=false, failover=true
+	err := r.conn.QueryRow(ctx,
+		"SELECT lsn FROM pg_create_logical_replication_slot($1, 'pgoutput', false, false, true);",
+		slotName).Scan(&lsn)
+	if err != nil {
+		return "", fmt.Errorf("create failover slot: %w", err)
+	}
+
+	return lsn, nil
+}
+
 // IsAlive check database connection problems.
 func (r RepositoryImpl) IsAlive() bool {
 	return !r.conn.IsClosed()

@@ -45,6 +45,7 @@ type replication interface {
 
 type repository interface {
 	CreatePublication(ctx context.Context, name string) error
+	CreateFailoverSlot(ctx context.Context, slotName string) (string, error)
 	GetSlotLSN(ctx context.Context, slotName string) (string, error)
 	IsReplicationActive(ctx context.Context, slotName string) (bool, error)
 	IsAlive() bool
@@ -217,14 +218,9 @@ func (l *Listener) Process(ctx context.Context) error {
 	}
 
 	if !slotIsExists {
-		result, err := l.replicator.CreateReplicationSlot(ctx, l.cfg.Listener.SlotName, pgOutputPlugin)
+		lsn, err := l.createSlot(ctx)
 		if err != nil {
-			return fmt.Errorf("create replication slot: %w", err)
-		}
-
-		lsn, err := pglogrepl.ParseLSN(result.ConsistentPoint)
-		if err != nil {
-			return fmt.Errorf("parse lsn: %w", err)
+			return err
 		}
 
 		l.setLSN(ctx, lsn)
@@ -284,6 +280,26 @@ func (l *Listener) checkConnection(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// createSlot creates the logical replication slot and returns its consistent
+// point LSN. When failover is enabled the slot is created through the SQL function
+func (l *Listener) createSlot(ctx context.Context) (pglogrepl.LSN, error) {
+	if l.cfg.Listener.Failover {
+		lsnStr, err := l.repository.CreateFailoverSlot(ctx, l.cfg.Listener.SlotName)
+		if err != nil {
+			return 0, fmt.Errorf("create failover replication slot: %w", err)
+		}
+
+		return pglogrepl.ParseLSN(lsnStr)
+	}
+
+	result, err := l.replicator.CreateReplicationSlot(ctx, l.cfg.Listener.SlotName, pgOutputPlugin)
+	if err != nil {
+		return 0, fmt.Errorf("create replication slot: %w", err)
+	}
+
+	return pglogrepl.ParseLSN(result.ConsistentPoint)
 }
 
 // slotIsExists checks whether a slot has already been created and if it has been created uses it.

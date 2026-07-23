@@ -28,6 +28,11 @@ func (r *repositoryMock) CreatePublication(ctx context.Context, name string) (er
 	return args.Error(0)
 }
 
+func (r *repositoryMock) CreateFailoverSlot(ctx context.Context, slotName string) (string, error) {
+	args := r.Called(ctx, slotName)
+	return args.Get(0).(string), args.Error(1)
+}
+
 func (r *repositoryMock) IsReplicationActive(ctx context.Context, slotName string) (bool, error) {
 	args := r.Called(ctx, slotName)
 	return args.Bool(0), args.Error(1)
