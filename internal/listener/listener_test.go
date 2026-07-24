@@ -620,6 +620,10 @@ func TestListener_Process(t *testing.T) {
 		repl.On("CreateReplicationSlot", mock.Anything, slotName, outputPlugin).Return(result, err)
 	}
 
+	setCreateFailoverSlot := func(slotName, lsn string, err error) {
+		repo.On("CreateFailoverSlot", mock.Anything, slotName).Return(lsn, err)
+	}
+
 	setIsReplicationActive := func(slot string, res bool, err error) {
 		repo.On("IsReplicationActive", mock.Anything, slot).Return(res, err)
 	}
@@ -755,6 +759,46 @@ func TestListener_Process(t *testing.T) {
 					pglogrepl.CreateReplicationSlotResult{ConsistentPoint: "100/200"},
 					nil,
 				)
+				setStartReplication(
+					nil,
+					"slot1",
+					pglogrepl.LSN(1099511628288),
+					pglogrepl.StartReplicationOptions{PluginArgs: []string{"proto_version '1'", "publication_names 'pgoutbox'"}},
+				)
+				setIsAlive(true)
+				setRepoIsAlive(true)
+				setReceiveMessage(nil, nil)
+				setSendStandbyStatusUpdate(nil)
+				setClose(nil)
+				setRepoClose(nil)
+			},
+			wantErr: nil,
+		},
+		{
+			name: "slot does not exists with failover",
+			cfg: &apis.Config{
+				Listener: &apis.ListenerCfg{
+					SlotName:          "slot1",
+					Failover:          true,
+					AckTimeout:        0,
+					RefreshConnection: 1,
+					HeartbeatInterval: 2,
+					Filter: apis.FilterStruct{
+						Tables: nil,
+					},
+					TopicsMap: nil,
+				},
+			},
+			setup: func() {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
+				_ = cancel
+
+				setCreatePublication("pgoutbox", nil)
+				setGetSlotLSN("slot1", "", nil)
+				// failover slots are created via the SQL function on the
+				// repository connection, not the replication protocol.
+				setCreateFailoverSlot("slot1", "100/200", nil)
 				setStartReplication(
 					nil,
 					"slot1",
