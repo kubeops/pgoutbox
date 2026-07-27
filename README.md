@@ -83,11 +83,53 @@ Notes:
 1. To receive `DataOld` field you need to change REPLICA IDENTITY to FULL as described here:
    [#SQL-ALTERTABLE-REPLICA-IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY)
 
+### Connection poolers (pgpool-II, PgBouncer)
+
+**Point `database.host` at the PostgreSQL primary, not at a pooler.** On
+Kubernetes that means the primary Service, whose endpoints follow a promotion.
+
+A logical replication stream cannot go through a protocol-aware pooler. pgpool-II
+implements neither the `replication=database` startup option — it forwards the
+startup packet to every backend, standbys included — nor the CopyBoth mode that
+`START_REPLICATION` switches the connection into, so the stream stalls and the
+pooler eventually tears the connection down. Slot and publication statements are
+unsafe through a pooler too, because read/write splitting sends reads about
+`pg_replication_slots` to standbys, where the slot state differs.
+
+For deployments that are already aimed at pgpool, pgoutbox bypasses it rather
+than failing in that confusing way: it runs `SHOW pool_nodes`, takes the backend
+that PostgreSQL itself reports as the primary (`pg_role`, falling back to
+pgpool's own `role`, which lags a failover), and dials that node for both the
+queries and the replication stream. A plain PostgreSQL endpoint is detected and
+used as is, so `database.host` accepts either.
+
+Whichever way the address was obtained, the node is then asked
+`pg_is_in_recovery()` before pgoutbox proceeds. A standby answers yes and the
+connection is retried, because a plain host may point at a replica and pgpool
+refreshes its view of the primary on a background poll, so it can name a backend
+that has already been demoted.
+
+### Failover
+
+Resolution and verification happen on every connection attempt, nothing is
+cached across restarts. When the primary changes:
+
+* the connections to the old node break, ending the stream;
+* if instead they stay open — a demoted node holding the socket, or a black holed
+  network path — the `pg_is_in_recovery()` check in the connection loop notices
+  within `refreshConnection` (15s by default);
+* pgoutbox exits non-zero, and the restart resolves the new primary.
+
+Resuming without a gap needs `listener.failover: true` together with PostgreSQL
+17's `sync_replication_slots=on`, which keeps the slot in step on the standbys.
+Otherwise the new primary has no slot, a fresh one is created at the current LSN,
+and changes committed before the promotion but not yet published are lost.
+
 ## Service configuration
 ```yaml
 listener:
   slotName: myslot_1
-  refreshConnection: 30s
+  refreshConnection: 15s
   heartbeatInterval: 10s
   filter:
     tables:
@@ -100,7 +142,7 @@ logger:
   level: info
   fmt: json
 database:
-  host: localhost
+  host: localhost # the PostgreSQL primary, or a pgpool endpoint to discover it through
   port: 5432
   name: my_db
   user: postgres

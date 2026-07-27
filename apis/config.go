@@ -62,6 +62,10 @@ type PublisherCfg struct {
 
 // DatabaseCfg path of the PostgreSQL DB config.
 type DatabaseCfg struct {
+	// Host should address the PostgreSQL primary. It may also point at a
+	// pgpool-II endpoint: since a pooler cannot proxy the logical replication
+	// protocol, pgoutbox then asks pgpool which backend is the primary and
+	// connects to that node directly.
 	Host     string `validate:"required" json:"host" mapstructure:"host"`
 	Port     uint16 `validate:"required" json:"port" mapstructure:"port"`
 	Name     string `validate:"required" json:"name" mapstructure:"name"`

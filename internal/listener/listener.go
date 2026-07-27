@@ -48,6 +48,7 @@ type repository interface {
 	CreateFailoverSlot(ctx context.Context, slotName string) (string, error)
 	GetSlotLSN(ctx context.Context, slotName string) (string, error)
 	IsReplicationActive(ctx context.Context, slotName string) (bool, error)
+	IsInRecovery(ctx context.Context) (bool, error)
 	IsAlive() bool
 	Close(ctx context.Context) error
 }
@@ -63,10 +64,17 @@ type monitor interface {
 
 // Listener main service struct.
 type Listener struct {
-	cfg        *apis.Config
-	log        *slog.Logger
-	monitor    monitor
-	mu         sync.RWMutex
+	cfg     *apis.Config
+	log     *slog.Logger
+	monitor monitor
+	mu      sync.RWMutex
+	// sendMu serializes writes to the replication connection. Standby status
+	// updates are sent from both the stream goroutine, on ack and on a requested
+	// reply, and the heartbeat goroutine. pglogrepl writes them straight to the
+	// connection's frontend without taking pgconn's lock, so two concurrent
+	// senders race on the write buffer and can interleave two CopyData frames
+	// into one malformed message.
+	sendMu     sync.Mutex
 	publisher  eventPublisher
 	replicator replication
 	repository repository
@@ -79,6 +87,7 @@ var (
 	errReplConnectionIsLost = errors.New("replication connection to postgres is lost")
 	errConnectionIsLost     = errors.New("db connection to postgres is lost")
 	errReplDidNotStart      = errors.New("replication did not start")
+	errPrimaryDemoted       = errors.New("postgres node is in recovery, it is no longer the primary")
 )
 
 // NewWalListener create and initialize new service instance.
@@ -239,7 +248,10 @@ func (l *Listener) Process(ctx context.Context) error {
 		return errReplDidNotStart
 	}
 
-	group := new(errgroup.Group)
+	// WithContext so that whichever goroutine fails first cancels the other.
+	// Otherwise a lost connection detected by checkConnection would never reach
+	// Wait, because Stream stays blocked in ReceiveMessage.
+	group, ctx := errgroup.WithContext(ctx)
 
 	group.Go(func() error {
 		return l.Stream(ctx)
@@ -248,17 +260,39 @@ func (l *Listener) Process(ctx context.Context) error {
 		return l.checkConnection(ctx)
 	})
 
-	if err = group.Wait(); err != nil {
+	err = group.Wait()
+
+	// Closed only once both goroutines have returned. Closing earlier races with
+	// the stream and heartbeat writes still in flight on the same connection.
+	if stopErr := l.Stop(); stopErr != nil {
+		logger.Error("failed to stop service", "err", stopErr)
+	}
+
+	if err != nil {
 		return fmt.Errorf("group: %w", err)
 	}
 
 	return nil
 }
 
+const (
+	// recoveryCheckTimeout bounds the recovery state query so that an open but
+	// dead socket surfaces as a failure instead of blocking the check forever.
+	recoveryCheckTimeout = 5 * time.Second
+	// maxRecoveryCheckFailures is how many consecutive failed recovery checks are
+	// tolerated, so that a transient error does not restart the service. Note
+	// this only absorbs errors the server answers with: a check that hits
+	// recoveryCheckTimeout makes pgx close the connection, so the IsAlive check
+	// on the next tick fails regardless of the count.
+	maxRecoveryCheckFailures = 3
+)
+
 // checkConnection periodically checks connections.
 func (l *Listener) checkConnection(ctx context.Context) error {
 	refresh := time.NewTicker(l.cfg.Listener.RefreshConnection)
 	defer refresh.Stop()
+
+	var recoveryCheckFailures int
 
 	for {
 		select {
@@ -270,16 +304,44 @@ func (l *Listener) checkConnection(ctx context.Context) error {
 			if !l.repository.IsAlive() {
 				return fmt.Errorf("repository: %w", errConnectionIsLost)
 			}
-		case <-ctx.Done():
-			l.log.Debug("check connection: context was canceled")
 
-			if err := l.Stop(); err != nil {
-				l.log.Error("failed to stop service", "err", err)
+			// IsAlive only reports a connection PostgreSQL closed on us. A node
+			// demoted by a failover, or one behind a black holed network path,
+			// keeps the socket open while sending no WAL, so ask it explicitly.
+			inRecovery, err := l.isInRecovery(ctx)
+			if err != nil {
+				recoveryCheckFailures++
+
+				l.log.Warn(
+					"recovery state check failed",
+					slog.Int("failures", recoveryCheckFailures),
+					"err", err,
+				)
+
+				if recoveryCheckFailures >= maxRecoveryCheckFailures {
+					return fmt.Errorf("repository: %w: %w", errConnectionIsLost, err)
+				}
+
+				continue
 			}
 
+			recoveryCheckFailures = 0
+
+			if inRecovery {
+				return errPrimaryDemoted
+			}
+		case <-ctx.Done():
+			l.log.Debug("check connection: context was canceled")
 			return nil
 		}
 	}
+}
+
+func (l *Listener) isInRecovery(ctx context.Context) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, recoveryCheckTimeout)
+	defer cancel()
+
+	return l.repository.IsInRecovery(ctx)
 }
 
 // createSlot creates the logical replication slot and returns its consistent
@@ -349,7 +411,20 @@ func (l *Listener) Stream(ctx context.Context) error {
 		return fmt.Errorf("start replication: %w", err)
 	}
 
-	go l.SendPeriodicHeartbeats(ctx)
+	// The heartbeat shares the replication connection, so it must be gone before
+	// Stream returns: the caller closes that connection once Stream is done.
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	heartbeatDone := make(chan struct{})
+
+	go func() {
+		defer close(heartbeatDone)
+		l.SendPeriodicHeartbeats(heartbeatCtx)
+	}()
+
+	defer func() {
+		stopHeartbeat()
+		<-heartbeatDone
+	}()
 
 	pool := &sync.Pool{
 		New: func() any {
@@ -367,6 +442,14 @@ func (l *Listener) Stream(ctx context.Context) error {
 
 		rawMsg, err := l.replicator.ReceiveMessage(ctx)
 		if err != nil {
+			// A cancelled context is a shutdown, not a failure. pgconn aborts the
+			// blocked read by setting a deadline, so the error surfaces here as an
+			// I/O timeout rather than as context.Canceled.
+			if ctx.Err() != nil {
+				l.log.Warn("stream: context canceled", "err", err)
+				return nil
+			}
+
 			return fmt.Errorf("receive message: %w", err)
 		}
 
@@ -513,6 +596,9 @@ func (l *Listener) SendPeriodicHeartbeats(ctx context.Context) {
 
 // SendStandbyStatus sends a StandbyStatusUpdate with the current RestartLSN value to the server.
 func (l *Listener) SendStandbyStatus(ctx context.Context) error {
+	l.sendMu.Lock()
+	defer l.sendMu.Unlock()
+
 	lsn := l.readLSN()
 
 	status := pglogrepl.StandbyStatusUpdate{

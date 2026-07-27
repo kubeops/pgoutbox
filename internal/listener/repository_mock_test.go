@@ -37,3 +37,8 @@ func (r *repositoryMock) IsReplicationActive(ctx context.Context, slotName strin
 	args := r.Called(ctx, slotName)
 	return args.Bool(0), args.Error(1)
 }
+
+func (r *repositoryMock) IsInRecovery(ctx context.Context) (bool, error) {
+	args := r.Called(ctx)
+	return args.Bool(0), args.Error(1)
+}
