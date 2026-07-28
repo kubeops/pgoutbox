@@ -567,6 +567,114 @@ func TestListener_Stream(t *testing.T) {
 	}
 }
 
+func TestListener_StreamShutdown(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	cfg := &apis.Config{Listener: &apis.ListenerCfg{
+		SlotName:          "myslot",
+		HeartbeatInterval: time.Millisecond,
+	}}
+
+	// blockUntilDone stands in for a read parked in ReceiveMessage. pgconn aborts
+	// it by setting a deadline on the socket, so the error is an I/O timeout and
+	// carries nothing about the context.
+	blockUntilDone := func(args mock.Arguments) {
+		<-args.Get(0).(context.Context).Done()
+	}
+
+	newStream := func(repl *replicatorMock) *Listener {
+		repl.On("StartReplication", mock.Anything, "myslot", mock.Anything, mock.Anything).Return(nil)
+		repl.On("SendStandbyStatusUpdate", mock.Anything, mock.Anything).Return(nil)
+
+		return NewWalListener(cfg, logger, new(repositoryMock), repl, new(publisherMock),
+			new(parserMock), new(monitorMock))
+	}
+
+	t.Run("a canceled context is a clean stop, not a failure", func(t *testing.T) {
+		repl := new(replicatorMock)
+		repl.On("ReceiveMessage", mock.Anything).
+			Run(blockUntilDone).
+			Return(nil, errors.New("i/o timeout"))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		// Nil, otherwise every SIGTERM would exit non-zero and a rolling update
+		// would look like a crash.
+		assert.NoError(t, newStream(repl).Stream(ctx))
+	})
+
+	// A receive failure returns from Stream while the context is still live, which
+	// is the case where the heartbeat has nothing to stop it on its own.
+	t.Run("the heartbeat does not outlive a failed Stream", func(t *testing.T) {
+		repl := new(replicatorMock)
+		repl.On("ReceiveMessage", mock.Anything).
+			Run(func(mock.Arguments) { time.Sleep(5 * time.Millisecond) }).
+			Return(nil, errSimple)
+
+		assert.ErrorIs(t, newStream(repl).Stream(context.Background()), errSimple)
+
+		// Stream returning has to mean the heartbeat is gone: the caller closes the
+		// replication connection next, and the heartbeat writes to it.
+		sent := len(repl.Calls)
+		time.Sleep(20 * time.Millisecond)
+		assert.Equal(t, sent, len(repl.Calls), "heartbeat kept sending after Stream returned")
+	})
+}
+
+func TestListener_checkConnection(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	cfg := &apis.Config{Listener: &apis.ListenerCfg{RefreshConnection: time.Millisecond}}
+
+	newListener := func(repo *repositoryMock, repl *replicatorMock) *Listener {
+		repl.On("IsAlive").Return(true)
+		repo.On("IsAlive").Return(true)
+
+		return NewWalListener(cfg, logger, repo, repl, new(publisherMock), new(parserMock), new(monitorMock))
+	}
+
+	t.Run("node was demoted by a failover", func(t *testing.T) {
+		repo, repl := new(repositoryMock), new(replicatorMock)
+		defer repo.AssertExpectations(t)
+
+		repo.On("IsInRecovery", mock.Anything).Return(true, nil).Once()
+
+		err := newListener(repo, repl).checkConnection(context.Background())
+		assert.ErrorIs(t, err, errPrimaryDemoted)
+	})
+
+	t.Run("recovery check keeps failing", func(t *testing.T) {
+		repo, repl := new(repositoryMock), new(replicatorMock)
+		defer repo.AssertExpectations(t)
+
+		repo.On("IsInRecovery", mock.Anything).
+			Return(false, errors.New("timeout")).
+			Times(maxRecoveryCheckFailures)
+
+		err := newListener(repo, repl).checkConnection(context.Background())
+		assert.ErrorIs(t, err, errConnectionIsLost)
+	})
+
+	t.Run("a single failed recovery check is tolerated", func(t *testing.T) {
+		repo, repl := new(repositoryMock), new(replicatorMock)
+		defer repo.AssertExpectations(t)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repo.On("IsInRecovery", mock.Anything).Return(false, errors.New("timeout")).Once()
+		// The failure counter resets, so the loop runs on until the context ends.
+		repo.On("IsInRecovery", mock.Anything).
+			Return(false, nil).
+			Run(func(mock.Arguments) { cancel() })
+
+		// Closing the connections is Process's job, once both goroutines have
+		// returned, so cancelling here must leave them alone.
+		assert.NoError(t, newListener(repo, repl).checkConnection(ctx))
+		repo.AssertNotCalled(t, "Close", mock.Anything)
+		repl.AssertNotCalled(t, "Close")
+	})
+}
+
 func TestListener_Process(t *testing.T) {
 	ctx := context.Background()
 	monitor := new(monitorMock)
@@ -606,6 +714,10 @@ func TestListener_Process(t *testing.T) {
 
 	setRepoIsAlive := func(res bool) {
 		repo.On("IsAlive").Return(res)
+	}
+
+	setRepoIsInRecovery := func(res bool, err error) {
+		repo.On("IsInRecovery", mock.Anything).Return(res, err)
 	}
 
 	setReceiveMessage := func(msg []byte, err error) {
@@ -665,6 +777,7 @@ func TestListener_Process(t *testing.T) {
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
+				setRepoIsInRecovery(false, nil)
 				setReceiveMessage(nil, nil)
 				setSendStandbyStatusUpdate(nil)
 				setClose(nil)
@@ -701,6 +814,7 @@ func TestListener_Process(t *testing.T) {
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
+				setRepoIsInRecovery(false, nil)
 				setReceiveMessage(nil, nil)
 				setSendStandbyStatusUpdate(nil)
 				setClose(nil)
@@ -767,6 +881,7 @@ func TestListener_Process(t *testing.T) {
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
+				setRepoIsInRecovery(false, nil)
 				setReceiveMessage(nil, nil)
 				setSendStandbyStatusUpdate(nil)
 				setClose(nil)
@@ -807,6 +922,7 @@ func TestListener_Process(t *testing.T) {
 				)
 				setIsAlive(true)
 				setRepoIsAlive(true)
+				setRepoIsInRecovery(false, nil)
 				setReceiveMessage(nil, nil)
 				setSendStandbyStatusUpdate(nil)
 				setClose(nil)

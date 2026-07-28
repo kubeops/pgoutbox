@@ -91,7 +91,7 @@ func main() {
 				}
 			}
 
-			pgxConn, pgConn, err := initPgxConnections(cfg.Database, logger, time.Minute*10)
+			pgxConn, pgConn, err := initPgxConnections(ctx, cfg.Database, logger, time.Minute*10)
 			if err != nil {
 				return fmt.Errorf("pgx connection: %w", err)
 			}
@@ -128,14 +128,17 @@ func main() {
 			go svc.InitHandlers(ctx)
 
 			if err = svc.Process(ctx); err != nil {
-				slog.Error("service process failed", "err", err.Error())
+				return fmt.Errorf("service process: %w", err)
 			}
 
 			return nil
 		},
 	}
 
+	// A lost connection ends Process, so exit non-zero to let the restart
+	// rediscover the primary instead of looking like a clean shutdown.
 	if err := app.Run(os.Args); err != nil {
 		slog.Error("service error", "err", err)
+		os.Exit(1)
 	}
 }

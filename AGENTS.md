@@ -28,6 +28,7 @@ The produced binary is `pgoutbox`.
     - `repository.go` — Postgres repository interface (slot management, etc.).
     - `transaction/` — transaction assembly from individual change records.
     - `*_test.go`, `*_mock*.go` — unit-test mocks.
+  - `pgpool/` — `pgpool.go`: resolves the PostgreSQL primary behind a pgpool-II endpoint via `SHOW pool_nodes`.
   - `publisher/` — broker-side; **one file per broker**:
     - `nats.go`, `kafka.go`, `rabbit.go` — driver implementations.
     - `pubsub.go`, `pubsub_connection.go` — shared interfaces.
