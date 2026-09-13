@@ -48,16 +48,21 @@ type ListenerCfg struct {
 
 // PublisherCfg represent configuration for any publisher types.
 type PublisherCfg struct {
-	Type            PublisherType `validate:"required,oneof=nats kafka rabbitmq google_pubsub" json:"type" mapstructure:"type"`
-	Address         string        `validate:"required" json:"address" mapstructure:"address"`
-	NatsCredPath    string        `validate:"required_if=Type nats" json:"natsCredPath" mapstructure:"natsCredPath"`
-	Topic           string        `validate:"required" json:"topic" mapstructure:"topic"`
-	TopicPrefix     string        `json:"topicPrefix" mapstructure:"topicPrefix"`
-	EnableTLS       bool          `json:"enableTLS" mapstructure:"enableTlS"`
-	ClientCert      string        `validate:"required_if=EnableTLS true" json:"clientCert" mapstructure:"clientCert"`
-	ClientKey       string        `validate:"required_if=EnableTLS true" json:"clientKey" mapstructure:"clientKey"`
-	CACert          string        `validate:"required_if=EnableTLS true" json:"CACert" mapstructure:"caCert"`
-	PubSubProjectID string        `validate:"required_if=Type google_pubsub" json:"pubSubProjectID" mapstructure:"pubSubProductId"`
+	Type    PublisherType `validate:"required,oneof=nats kafka rabbitmq google_pubsub" json:"type" mapstructure:"type"`
+	Address string        `validate:"required" json:"address" mapstructure:"address"`
+	// NatsCredPath is optional: a NATS deployment with no auth configured
+	// at all needs no credentials file, so an empty value is valid and
+	// simply connects without one (see factoryPublisher in
+	// cmd/pgoutbox/init.go). Only set this when the target NATS server
+	// actually requires credentials.
+	NatsCredPath    string `json:"natsCredPath" mapstructure:"natsCredPath"`
+	Topic           string `validate:"required" json:"topic" mapstructure:"topic"`
+	TopicPrefix     string `json:"topicPrefix" mapstructure:"topicPrefix"`
+	EnableTLS       bool   `json:"enableTLS" mapstructure:"enableTlS"`
+	ClientCert      string `validate:"required_if=EnableTLS true" json:"clientCert" mapstructure:"clientCert"`
+	ClientKey       string `validate:"required_if=EnableTLS true" json:"clientKey" mapstructure:"clientKey"`
+	CACert          string `validate:"required_if=EnableTLS true" json:"CACert" mapstructure:"caCert"`
+	PubSubProjectID string `validate:"required_if=Type google_pubsub" json:"pubSubProjectID" mapstructure:"pubSubProductId"`
 }
 
 // DatabaseCfg path of the PostgreSQL DB config.

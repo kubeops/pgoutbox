@@ -266,7 +266,11 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: errors.New("Key: 'Config.Publisher.Topic' Error:Field validation for 'Topic' failed on the 'required' tag"),
 		},
 		{
-			name: "nats publisher missing NatsCredPath",
+			// NatsCredPath is optional (credential-less mode): a NATS
+			// deployment with no auth configured at all needs no
+			// credentials file, so this must validate successfully, not
+			// fail on a required_if tag.
+			name: "nats publisher missing NatsCredPath - success (credential-less mode)",
 			fields: fields{
 				Logger: &Logger{
 					Level: "info",
@@ -291,7 +295,7 @@ func TestConfig_Validate(t *testing.T) {
 					TopicPrefix: "prefix",
 				},
 			},
-			wantErr: errors.New("Key: 'Config.Publisher.NatsCredPath' Error:Field validation for 'NatsCredPath' failed on the 'required_if' tag"),
+			wantErr: nil,
 		},
 		{
 			name: "nats publisher with NatsCredPath - success",
