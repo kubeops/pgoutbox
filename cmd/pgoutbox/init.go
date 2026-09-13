@@ -278,7 +278,13 @@ func factoryPublisher(ctx context.Context, cfg *apis.PublisherCfg, logger *slog.
 
 		return publisher.NewKafkaPublisher(producer), nil
 	case apis.PublisherTypeNats:
-		conn, err := nats.Connect(cfg.Address, nats.UserCredentials(cfg.NatsCredPath))
+		// NatsCredPath is optional: connect without credentials when it is
+		// unset, for a NATS deployment with no auth configured at all.
+		var opts []nats.Option
+		if cfg.NatsCredPath != "" {
+			opts = append(opts, nats.UserCredentials(cfg.NatsCredPath))
+		}
+		conn, err := nats.Connect(cfg.Address, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("nats connection: %w", err)
 		}
