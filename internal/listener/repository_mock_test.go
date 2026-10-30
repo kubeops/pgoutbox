@@ -23,8 +23,8 @@ func (r *repositoryMock) Close(ctx context.Context) error {
 	return r.Called(ctx).Error(0)
 }
 
-func (r *repositoryMock) CreatePublication(ctx context.Context, name string) (err error) {
-	args := r.Called(ctx, name)
+func (r *repositoryMock) EnsurePublication(ctx context.Context, name string, tables []string) error {
+	args := r.Called(ctx, name, tables)
 	return args.Error(0)
 }
 
