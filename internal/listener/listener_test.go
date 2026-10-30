@@ -683,8 +683,8 @@ func TestListener_Process(t *testing.T) {
 	repl := new(replicatorMock)
 	pub := new(publisherMock)
 
-	setCreatePublication := func(name string, err error) {
-		repo.On("CreatePublication", mock.Anything, name).Return(err).Once()
+	setEnsurePublication := func(name string, tables []string, err error) {
+		repo.On("EnsurePublication", mock.Anything, name, tables).Return(err).Once()
 	}
 
 	setGetSlotLSN := func(slotName string, lsn string, err error) {
@@ -755,7 +755,11 @@ func TestListener_Process(t *testing.T) {
 					RefreshConnection: 1,
 					HeartbeatInterval: 2,
 					Filter: apis.FilterStruct{
-						Tables: nil,
+						Tables: map[string][]string{
+							"users":    {"insert"},
+							"accounts": {"update"},
+							"orders":   {"insert", "delete"},
+						},
 					},
 					TopicsMap: nil,
 				},
@@ -767,7 +771,8 @@ func TestListener_Process(t *testing.T) {
 
 				setIsReplicationActive("slot1", false, nil)
 
-				setCreatePublication("pgoutbox", nil)
+				// The publication covers the filter's tables, in a stable order.
+				setEnsurePublication("pgoutbox", []string{"accounts", "orders", "users"}, nil)
 				setGetSlotLSN("slot1", "100/200", nil)
 				setStartReplication(
 					nil,
@@ -786,7 +791,7 @@ func TestListener_Process(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "skip create publication",
+			name: "ensure publication error",
 			cfg: &apis.Config{
 				Listener: &apis.ListenerCfg{
 					SlotName:          "slot1",
@@ -804,23 +809,10 @@ func TestListener_Process(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
 				_ = cancel
 
-				setCreatePublication("pgoutbox", errors.New("some err"))
-				setGetSlotLSN("slot1", "100/200", nil)
-				setStartReplication(
-					nil,
-					"slot1",
-					pglogrepl.LSN(1099511628288),
-					pglogrepl.StartReplicationOptions{PluginArgs: []string{"proto_version '1'", "publication_names 'pgoutbox'"}},
-				)
-				setIsAlive(true)
-				setRepoIsAlive(true)
-				setRepoIsInRecovery(false, nil)
-				setReceiveMessage(nil, nil)
-				setSendStandbyStatusUpdate(nil)
-				setClose(nil)
-				setRepoClose(nil)
+				// Nothing past the publication may run: no slot lookup, no stream.
+				setEnsurePublication("pgoutbox", nil, errors.New("some err"))
 			},
-			wantErr: nil,
+			wantErr: errors.New("ensure publication: some err"),
 		},
 		{
 			name: "get slot error",
@@ -841,7 +833,7 @@ func TestListener_Process(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
 				_ = cancel
 
-				setCreatePublication("pgoutbox", nil)
+				setEnsurePublication("pgoutbox", nil, nil)
 				setGetSlotLSN("slot1", "100/200", errors.New("some err"))
 			},
 			wantErr: errors.New("slot is exists: get slot lsn: some err"),
@@ -865,7 +857,7 @@ func TestListener_Process(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
 				_ = cancel
 
-				setCreatePublication("pgoutbox", nil)
+				setEnsurePublication("pgoutbox", nil, nil)
 				setGetSlotLSN("slot1", "", nil)
 				setCreateReplicationSlot(
 					"slot1",
@@ -909,7 +901,7 @@ func TestListener_Process(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, time.Millisecond*20)
 				_ = cancel
 
-				setCreatePublication("pgoutbox", nil)
+				setEnsurePublication("pgoutbox", nil, nil)
 				setGetSlotLSN("slot1", "", nil)
 				// failover slots are created via the SQL function on the
 				// repository connection, not the replication protocol.

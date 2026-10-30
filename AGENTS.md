@@ -71,4 +71,5 @@ go test ./internal/listener/... -run TestName -v
 - Adding a new message broker: drop a `internal/publisher/<name>.go` implementing the publisher interface from `pubsub.go`. Don't fan out broker-specific logic across `internal/listener/`.
 - The Postgres logical-decoding side relies on the **`pgoutput`** plugin (standard with PostgreSQL >= 10). Don't replace it with a custom output plugin — that breaks compatibility with managed Postgres.
 - Event filtering happens in `internal/listener/transaction/`; broker selection happens in `internal/publisher/`. Keep those two surfaces separate.
+- The `pgoutbox` publication is rebuilt from `listener.filter.tables` on every start (`EnsurePublication` in `internal/listener/repository.go`), so PostgreSQL only sends the filtered tables. Keep the drop and the create in one transaction: WAL decoded while the publication does not exist fails the slot on every restart (PostgreSQL <= 17) or is skipped unpublished (18+).
 - Three Dockerfiles, one binary — keep `Dockerfile.in`, `Dockerfile.dbg`, and `Dockerfile.ubi` in sync.

@@ -55,7 +55,8 @@ databases:
 
 ```
 This filter means that we only process events occurring with the `users` table,
-and in particular `insert` and `update` data.
+and in particular `insert` and `update` data. The same tables make up the publication
+(see [DB setting](#db-setting)), so changes to any other table are not even sent.
 
 ### Topic mapping
 By default, output NATS topic name consist of prefix, DB schema, and DB table name,
@@ -71,12 +72,20 @@ You must make the following settings in the db configuration (postgresql.conf)
 * wal_level >= “logical”
 * max_replication_slots >= 1
 
-The publication & slot created automatically when the service starts (for all tables and all actions).
-You can delete the default publication and create your own (name: _pgoutbox_) with the necessary filtering conditions, and then the filtering will occur at the database level and not at the application level.
+The publication (_pgoutbox_) and the slot are created automatically when the service starts.
+The publication covers only the tables in `listener.filter.tables`, so pgoutput drops the changes to every other
+table inside PostgreSQL instead of sending them to the service just to be filtered out. That matters most for a
+table that stores large values: it still writes WAL, which the server still decodes, but its rows are never sent.
+Actions are still filtered by the service.
+
+The publication is rebuilt from the filter on every start, dropped and recreated in one transaction, and a
+publication left `FOR ALL TABLES` by an older version is replaced the same way. Changes made to it by hand are
+overwritten at the next start. Logical decoding reads the publication as it was when each change was written, so:
+
+* changes already waiting in the slot when the publication changes are still sent under the old definition;
+* a table newly added to the filter is published from the start that adds it onwards.
 
 https://www.postgresql.org/docs/current/sql-createpublication.html
-
-If you change the publication, do not forget to change the slot name or delete the current one.
 
 Notes:
 

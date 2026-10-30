@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -55,13 +56,44 @@ func (r RepositoryImpl) GetSlotLSN(ctx context.Context, slotName string) (string
 	return restartLSNStr, nil
 }
 
-// CreatePublication create publication fo all.
-func (r RepositoryImpl) CreatePublication(ctx context.Context, name string) error {
-	if _, err := r.conn.Exec(ctx, `CREATE PUBLICATION "`+name+`" FOR ALL TABLES`); err != nil {
-		return fmt.Errorf("exec: %w", err)
+// EnsurePublication makes the named publication cover exactly the given
+// tables, replacing whatever definition it had, so that pgoutput sends only
+// their changes. With no tables the publication is empty.
+//
+// The drop and the create share one transaction. Logical decoding looks the
+// publication up by name in the catalog as of each decoded change, so dropping
+// it separately leaves a stretch of WAL in which it does not exist. Up to
+// PostgreSQL 17 decoding that stretch fails on every restart, leaving the slot
+// stuck, and from 18 on the changes in it are skipped without being published.
+func (r RepositoryImpl) EnsurePublication(ctx context.Context, name string, tables []string) error {
+	return pgx.BeginFunc(ctx, r.conn, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "DROP PUBLICATION IF EXISTS "+pgx.Identifier{name}.Sanitize()); err != nil {
+			return fmt.Errorf("drop publication: %w", err)
+		}
+
+		if _, err := tx.Exec(ctx, createPublicationSQL(name, tables)); err != nil {
+			return fmt.Errorf("create publication: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// createPublicationSQL builds the statement creating the publication for the
+// given tables. The names are quoted, so each one has to be the exact relation
+// name, which is also what the filter matches events against.
+func createPublicationSQL(name string, tables []string) string {
+	query := "CREATE PUBLICATION " + pgx.Identifier{name}.Sanitize()
+	if len(tables) == 0 {
+		return query
 	}
 
-	return nil
+	quoted := make([]string, len(tables))
+	for i, table := range tables {
+		quoted[i] = pgx.Identifier{table}.Sanitize()
+	}
+
+	return query + " FOR TABLE " + strings.Join(quoted, ", ")
 }
 
 // CreateFailoverSlot creates a logical replication slot with the failover

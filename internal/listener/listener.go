@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -44,7 +46,7 @@ type replication interface {
 }
 
 type repository interface {
-	CreatePublication(ctx context.Context, name string) error
+	EnsurePublication(ctx context.Context, name string, tables []string) error
 	CreateFailoverSlot(ctx context.Context, slotName string) (string, error)
 	GetSlotLSN(ctx context.Context, slotName string) (string, error)
 	IsReplicationActive(ctx context.Context, slotName string) (bool, error)
@@ -217,9 +219,18 @@ func (l *Listener) Process(ctx context.Context) error {
 
 	logger.Info("service was started")
 
-	if err := l.repository.CreatePublication(ctx, publicationName); err != nil {
-		logger.Warn("publication creation was skipped", "err", err)
+	// Publish only the tables the filter keeps. pgoutput then drops the changes
+	// to every other table inside PostgreSQL rather than sending them here just
+	// to be discarded, which for a table holding large values can be most of
+	// the stream. Failing to set it up is fatal: carrying on with a stale
+	// publication would silently leave out a table just added to the filter.
+	tables := slices.Sorted(maps.Keys(l.cfg.Listener.Filter.Tables))
+	if err := l.repository.EnsurePublication(ctx, publicationName, tables); err != nil {
+		return fmt.Errorf("ensure publication: %w", err)
 	}
+
+	logger.Info("publication was synced with the filter",
+		slog.String("publication", publicationName), slog.Any("tables", tables))
 
 	slotIsExists, err := l.slotIsExists(ctx)
 	if err != nil {
