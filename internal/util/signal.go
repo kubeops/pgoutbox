@@ -55,6 +55,5 @@ func RequestShutdown() bool {
 		default:
 		}
 	}
-
 	return false
 }
